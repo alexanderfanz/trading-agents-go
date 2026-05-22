@@ -40,6 +40,7 @@ func main() {
 	cacheDir := flag.String("cache-dir", cfg.DataCacheDir, "Directory to cache downloaded finance data")
 	memoryPath := flag.String("memory-path", cfg.MemoryLogPath, "Path to write cumulative decision memory md")
 	dbPath := flag.String("db-path", filepath.Join(config.GetDefaultHome(), "checkpoints.db"), "Path to sqlite checkpoints database")
+	timeoutFlag := flag.Int("timeout", cfg.ExecutionTimeout, "Master execution timeout boundary in seconds")
 	help := flag.Bool("h", false, "Show help usage description")
 	flag.BoolVar(help, "help", false, "Show help usage description")
 
@@ -61,6 +62,7 @@ func main() {
 	cfg.ResultsDir = *resultsDir
 	cfg.DataCacheDir = *cacheDir
 	cfg.MemoryLogPath = *memoryPath
+	cfg.ExecutionTimeout = *timeoutFlag
 
 	// 4. Initialize Terminal Controller for Theme Styling & Piping checks
 	cliController := cli.NewCLIController()
@@ -182,8 +184,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	// Setup master execution timeout boundary of 120 seconds
-	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	// Setup master execution timeout boundary of dynamic duration
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.ExecutionTimeout)*time.Second)
 	defer cancel()
 
 	// 13. Execute the workflow execution pipeline

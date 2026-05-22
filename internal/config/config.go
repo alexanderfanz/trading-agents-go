@@ -29,6 +29,7 @@ type Config struct {
 	GlobalNewsArticleLimit int
 	GlobalNewsLookbackDays int
 	BenchmarkTicker        string
+	ExecutionTimeout       int
 }
 
 // GetDefaultHome returns the standard home folder (~/.tradingagents) for local logs/cache.
@@ -66,6 +67,7 @@ func LoadConfig() *Config {
 		GlobalNewsArticleLimit: 10,
 		GlobalNewsLookbackDays: 7,
 		BenchmarkTicker:        "SPY",
+		ExecutionTimeout:       300,
 	}
 
 	// 2. Resolve specific overrides from the environment variables
@@ -106,6 +108,11 @@ func LoadConfig() *Config {
 	if v := os.Getenv("TRADINGAGENTS_MAX_RISK_ROUNDS"); v != "" {
 		if val, err := strconv.Atoi(v); err == nil {
 			cfg.MaxRiskDiscussRounds = val
+		}
+	}
+	if v := os.Getenv("TRADINGAGENTS_EXECUTION_TIMEOUT"); v != "" {
+		if val, err := strconv.Atoi(v); err == nil {
+			cfg.ExecutionTimeout = val
 		}
 	}
 

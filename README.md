@@ -151,6 +151,7 @@ go build -o tradingagents cmd/tradingagents/main.go
 | `-cache-dir` | `string` | Directory to cache downloaded Yahoo Finance CSV files | `~/.tradingagents/cache` |
 | `-results-dir` | `string` | Directory to write API logs and diagnostic tokens | `~/.tradingagents/logs` |
 | `-memory-path` | `string` | Cumulative decision-log journal output file | `~/.tradingagents/memory/trading_memory.md` |
+| `-timeout` | `int` | Master execution timeout boundary in seconds | `300` |
 
 ### Environment Variable Overrides
 
@@ -170,6 +171,7 @@ The application automatically resolves configurations from system environment va
 | `TRADINGAGENTS_CHECKPOINT_ENABLED` | Toggle checkpoint recovery (`true`/`false`) | `false` |
 | `TRADINGAGENTS_OUTPUT_LANGUAGE` | Default response localization language | `English` |
 | `TRADINGAGENTS_LLM_BACKEND_URL` | Custom HTTP proxy API gateway URL | *Empty* |
+| `TRADINGAGENTS_EXECUTION_TIMEOUT` | Master execution timeout boundary in seconds | `300` |
 
 ---
 
