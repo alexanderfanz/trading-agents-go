@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+*.out
+*.test
+prof/
