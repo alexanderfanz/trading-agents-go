@@ -1,6 +1,6 @@
 # TradingAgents: High-Performance Go Orchestrator
 
-A modern, type-safe, ultra-high-performance Go migration of the legacy Python `TradingAgents` framework. This rewrite completely replaces heavy graph framework overheads with native Go concurrency pipelines, provides zero-allocation financial indicators, and features a premium command-line interface built with HSL-harmonized Lipgloss tokens.
+This repository is a high-performance Go port and direct migration of the sibling Python `TradingAgents` framework. It completely replaces heavy graph framework overheads with native Go concurrency pipelines, provides zero-allocation financial indicators, and features a premium command-line interface built with HSL-harmonized Lipgloss tokens.
 
 ---
 
