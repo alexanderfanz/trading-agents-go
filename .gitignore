@@ -16,3 +16,16 @@ bin/
 *.out
 *.test
 prof/
+
+# Local Environment Credentials
+.env
+.env.local
+.env.*.local
+checkpoints.db
+checkpoints.db-journal
+checkpoints.db-wal
+checkpoints.db-shm
+logs/
+cache/
+memory/
+
