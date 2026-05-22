@@ -27,5 +27,6 @@ checkpoints.db-wal
 checkpoints.db-shm
 logs/
 cache/
-memory/
+/memory/
+prompt.txt
 

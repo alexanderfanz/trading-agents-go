@@ -3,8 +3,6 @@ package orchestrator
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -15,6 +13,7 @@ import (
 	"trading-agents-go/internal/config"
 	"trading-agents-go/internal/dataflow"
 	"trading-agents-go/internal/indicators"
+	"trading-agents-go/internal/memory"
 	"trading-agents-go/pkg/provider"
 )
 
@@ -128,11 +127,12 @@ const (
 
 // TradingOrchestrator coordinates the pipeline lifecycle and multi-agent loops.
 type TradingOrchestrator struct {
-	cfg               *config.Config
-	checkpointer      *checkpoint.StateCheckpointer
-	dataProvider      dataflow.DataProvider
-	llmProvider       provider.LLMProvider
-	indicatorResolver *indicators.DynamicIndicatorResolver
+	cfg                *config.Config
+	checkpointer       *checkpoint.StateCheckpointer
+	dataProvider       dataflow.DataProvider
+	llmProvider        provider.LLMProvider
+	indicatorResolver  *indicators.DynamicIndicatorResolver
+	newsSocialProvider dataflow.NewsSocialProvider
 }
 
 // NewTradingOrchestrator instantiates a new orchestrator.
@@ -142,13 +142,15 @@ func NewTradingOrchestrator(
 	dataProvider dataflow.DataProvider,
 	llmProvider provider.LLMProvider,
 	indicatorResolver *indicators.DynamicIndicatorResolver,
+	newsSocialProvider dataflow.NewsSocialProvider,
 ) *TradingOrchestrator {
 	return &TradingOrchestrator{
-		cfg:               cfg,
-		checkpointer:      checkpointer,
-		dataProvider:      dataProvider,
-		llmProvider:       llmProvider,
-		indicatorResolver: indicatorResolver,
+		cfg:                cfg,
+		checkpointer:       checkpointer,
+		dataProvider:       dataProvider,
+		llmProvider:        llmProvider,
+		indicatorResolver:  indicatorResolver,
+		newsSocialProvider: newsSocialProvider,
 	}
 }
 
@@ -158,6 +160,13 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	state, stepIndex, err := o.checkpointer.Load(ctx, ticker, tradeDate)
 	if err != nil {
 		return "", fmt.Errorf("failed to load checkpoint: %w", err)
+	}
+
+	// Resolve any pending memory log entries before the pipeline runs (Phase A outcome resolution)
+	if o.cfg.MemoryLogPath != "" {
+		log := memory.NewTradingMemoryLog(o.cfg.MemoryLogPath, o.cfg.MemoryLogMaxEntries)
+		ref := memory.NewReflector(o.llmProvider)
+		_ = memory.ResolvePendingEntries(ctx, ticker, log, ref, o.dataProvider, o.cfg.BenchmarkTicker)
 	}
 
 	if stepIndex >= 0 {
@@ -180,6 +189,14 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 			},
 			AnalystReports: make(map[string]string),
 			Metadata:       make(map[string]string),
+		}
+
+		if o.cfg.MemoryLogPath != "" {
+			log := memory.NewTradingMemoryLog(o.cfg.MemoryLogPath, o.cfg.MemoryLogMaxEntries)
+			pastContext, err := log.GetPastContext(ticker, 5, 3)
+			if err == nil && pastContext != "" {
+				state.Metadata["past_context"] = pastContext
+			}
 		}
 	}
 
@@ -252,14 +269,12 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	}
 
 	if o.cfg.MemoryLogPath != "" {
-		_ = os.MkdirAll(filepath.Dir(o.cfg.MemoryLogPath), 0755)
-		f, err := os.OpenFile(o.cfg.MemoryLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err == nil {
-			defer f.Close()
-			state.RLock()
-			decisionLog := fmt.Sprintf("\n## Decision for %s on %s\n%s\n", ticker, tradeDate, state.FinalTradeDecision)
-			state.RUnlock()
-			_, _ = f.WriteString(decisionLog)
+		log := memory.NewTradingMemoryLog(o.cfg.MemoryLogPath, o.cfg.MemoryLogMaxEntries)
+		state.RLock()
+		finalDecision := state.FinalTradeDecision
+		state.RUnlock()
+		if err := log.StoreDecision(ticker, tradeDate, finalDecision); err != nil {
+			fmt.Printf("[WARNING] Failed to store decision in memory log: %v\n", err)
 		}
 	}
 
@@ -291,6 +306,57 @@ func (o *TradingOrchestrator) RunConcurrentAnalysts(ctx context.Context, state *
 	indicatorsMap, err := o.computeAllIndicators(ctx, candles, state.Ticker, tradeDateParsed)
 	if err != nil {
 		indicatorsMap = make(map[string]float64)
+	}
+
+	// Scrape corporate and global news, StockTwits, and Reddit concurrently
+	var (
+		newsBlock       string
+		globalNewsBlock string
+		stocktwitsBlock string
+		redditBlock     string
+		newsErr         error
+		gNewsErr        error
+		stErr           error
+		rdErr           error
+	)
+
+	var scrapeWg sync.WaitGroup
+	scrapeWg.Add(4)
+
+	go func() {
+		defer scrapeWg.Done()
+		lookbackStart := tradeDateParsed.AddDate(0, 0, -7)
+		newsBlock, newsErr = o.newsSocialProvider.FetchNews(ctx, state.Ticker, lookbackStart, tradeDateParsed)
+	}()
+
+	go func() {
+		defer scrapeWg.Done()
+		globalNewsBlock, gNewsErr = o.newsSocialProvider.FetchGlobalNews(ctx, tradeDateParsed, 7, 10)
+	}()
+
+	go func() {
+		defer scrapeWg.Done()
+		stocktwitsBlock, stErr = o.newsSocialProvider.FetchStockTwits(ctx, state.Ticker, 30)
+	}()
+
+	go func() {
+		defer scrapeWg.Done()
+		redditBlock, rdErr = o.newsSocialProvider.FetchReddit(ctx, state.Ticker, []string{"wallstreetbets", "stocks", "investing"}, 5)
+	}()
+
+	scrapeWg.Wait()
+
+	if newsErr != nil {
+		fmt.Printf("[WARNING] FetchNews failed for %s: %v\n", state.Ticker, newsErr)
+	}
+	if gNewsErr != nil {
+		fmt.Printf("[WARNING] FetchGlobalNews failed: %v\n", gNewsErr)
+	}
+	if stErr != nil {
+		fmt.Printf("[WARNING] FetchStockTwits failed for %s: %v\n", state.Ticker, stErr)
+	}
+	if rdErr != nil {
+		fmt.Printf("[WARNING] FetchReddit failed for %s: %v\n", state.Ticker, rdErr)
 	}
 
 	var wg sync.WaitGroup
@@ -334,10 +400,10 @@ func (o *TradingOrchestrator) RunConcurrentAnalysts(ctx context.Context, state *
 		return o.runMarketAnalyst(ctx, state, candles, indicatorsMap)
 	})
 	go executeSafe("Sentiment", func() (string, error) {
-		return o.runSentimentAnalyst(ctx, state)
+		return o.runSentimentAnalyst(ctx, state, newsBlock, stocktwitsBlock, redditBlock)
 	})
 	go executeSafe("News", func() (string, error) {
-		return o.runNewsAnalyst(ctx, state)
+		return o.runNewsAnalyst(ctx, state, newsBlock, globalNewsBlock)
 	})
 	go executeSafe("Fundamentals", func() (string, error) {
 		return o.runFundamentalsAnalyst(ctx, state, fundamentalsStr)
@@ -404,28 +470,86 @@ Indicators:
 Historical candles count: %d.
 Write a detailed market trend report and append a markdown summary table at the end.`, state.Ticker, state.TradeDate, indStr.String(), len(candles))
 
-	agent := NewAgent("Market Analyst", "Market Analyst", MarketAnalystInstruction, o.llmProvider)
+	agent := o.createAgent("Market Analyst", "Market Analyst", MarketAnalystInstruction)
 	return agent.Call(ctx, prompt)
 }
 
 // runSentimentAnalyst invokes the sentiment analyst prompt.
-func (o *TradingOrchestrator) runSentimentAnalyst(ctx context.Context, state *checkpoint.TradingState) (string, error) {
-	prompt := fmt.Sprintf("Analyze sentiment trends, social media discussions, and general retail mood for %s on %s.", state.Ticker, state.TradeDate)
-	agent := NewAgent("Sentiment Analyst", "Sentiment Analyst", SentimentAnalystInstruction, o.llmProvider)
+func (o *TradingOrchestrator) runSentimentAnalyst(ctx context.Context, state *checkpoint.TradingState, newsBlock, stocktwitsBlock, redditBlock string) (string, error) {
+	prompt := fmt.Sprintf(`You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for %s covering the period up to %s, drawing on three complementary data sources that have already been collected for you.
+
+## Data sources (pre-fetched, in this prompt)
+
+### News headlines — Yahoo Finance, past 7 days
+Institutional framing. Fact-driven, slower-moving signal.
+
+<start_of_news>
+%s
+<end_of_news>
+
+### StockTwits messages — retail-trader social platform indexed by cashtag
+Fast-moving signal. Each message carries a user-labeled sentiment tag (Bullish / Bearish / no-label) plus the message body.
+
+<start_of_stocktwits>
+%s
+<end_of_stocktwits>
+
+### Reddit posts — r/wallstreetbets, r/stocks, r/investing (past 7 days)
+Community discussion. Engagement signal via upvote score and comment count. Subreddit character matters.
+
+<start_of_reddit>
+%s
+<end_of_reddit>
+
+## How to analyze this data (best practices)
+
+1. **Read the StockTwits Bullish/Bearish ratio as a leading retail-sentiment signal.** A 70/30 bullish/bearish split is moderately bullish; >=90/10 may indicate over-extension and contrarian risk; 50/50 is uncertainty. Base rates on the actual message count, not percentages alone.
+2. **Look for cross-source divergences.** If news framing is bearish but StockTwits is overwhelmingly bullish, that mismatch is itself a signal.
+3. **Weight Reddit posts by engagement.** High score and comment count posts reflect community attention; low score posts are noise.
+4. **Distinguish opinion from event.** A news headline is an event; a StockTwits post is opinion.
+5. **Identify recurring narrative themes.** What topic keeps coming up across sources?
+6. **Be honest about data limits.** If StockTwits returned only a handful of messages, or one or more sources returned an "<unavailable>" placeholder, flag this caveat explicitly.
+7. **Identify catalysts and risks** that emerge across sources.
+8. **Past sentiment is not predictive.** Frame conclusions as signals for the trader to weigh, not as a price call.
+
+## Output
+
+Produce a sentiment report covering, in order:
+
+1. **Overall sentiment direction** — Bullish / Bearish / Neutral / Mixed — with a brief confidence note based on data quality and sample size.
+2. **Source-by-source breakdown** — what each of news / StockTwits / Reddit is telling you, with specific evidence (cite message counts, ratios, notable posts).
+3. **Divergences, alignments, and key narratives** across sources.
+4. **Catalysts and risks** surfaced by the data.
+5. **Markdown table** at the end summarizing key sentiment signals, their direction, source, and supporting evidence.`, state.Ticker, state.TradeDate, newsBlock, stocktwitsBlock, redditBlock)
+	agent := o.createAgent("Sentiment Analyst", "Sentiment Analyst", SentimentAnalystInstruction)
 	return agent.Call(ctx, prompt)
 }
 
 // runNewsAnalyst invokes the news analyst prompt.
-func (o *TradingOrchestrator) runNewsAnalyst(ctx context.Context, state *checkpoint.TradingState) (string, error) {
-	prompt := fmt.Sprintf("Analyze corporate news, regulatory announcements, macroeconomic events, and insider filings for %s on %s.", state.Ticker, state.TradeDate)
-	agent := NewAgent("News Analyst", "News Analyst", NewsAnalystInstruction, o.llmProvider)
+func (o *TradingOrchestrator) runNewsAnalyst(ctx context.Context, state *checkpoint.TradingState, newsBlock, globalNewsBlock string) (string, error) {
+	prompt := fmt.Sprintf(`You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics for %s on %s.
+
+## Data sources (pre-fetched, in this prompt)
+
+### Corporate specific news — past 7 days
+<start_of_news>
+%s
+<end_of_news>
+
+### Global Macroeconomic & Market news — past 7 days
+<start_of_global_news>
+%s
+<end_of_global_news>
+
+Provide specific, actionable insights with supporting evidence to help traders make informed decisions. Make sure to append a Markdown table at the end of the report to organize key points in the report, making it organized and easy to read.`, state.Ticker, state.TradeDate, newsBlock, globalNewsBlock)
+	agent := o.createAgent("News Analyst", "News Analyst", NewsAnalystInstruction)
 	return agent.Call(ctx, prompt)
 }
 
 // runFundamentalsAnalyst invokes the fundamentals analyst prompt.
 func (o *TradingOrchestrator) runFundamentalsAnalyst(ctx context.Context, state *checkpoint.TradingState, fundamentalsStr string) (string, error) {
 	prompt := fmt.Sprintf("Analyze fundamental statements, margins, cash flow details, and valuation metrics for %s on %s.\nDetails:\n%s", state.Ticker, state.TradeDate, fundamentalsStr)
-	agent := NewAgent("Fundamentals Analyst", "Fundamentals Analyst", FundamentalsAnalystInstruction, o.llmProvider)
+	agent := o.createAgent("Fundamentals Analyst", "Fundamentals Analyst", FundamentalsAnalystInstruction)
 	return agent.Call(ctx, prompt)
 }
 
@@ -437,9 +561,9 @@ func (o *TradingOrchestrator) RunResearchDebate(ctx context.Context, state *chec
 	}
 	state.Unlock()
 
-	bullAgent := NewAgent("Bull Analyst", "Bull Analyst", BullInstruction, o.llmProvider)
-	bearAgent := NewAgent("Bear Analyst", "Bear Analyst", BearInstruction, o.llmProvider)
-	managerAgent := NewAgent("Research Manager", "Research Manager", ResearchManagerInstruction, o.llmProvider)
+	bullAgent := o.createAgent("Bull Analyst", "Bull Analyst", BullInstruction)
+	bearAgent := o.createAgent("Bear Analyst", "Bear Analyst", BearInstruction)
+	managerAgent := o.createAgent("Research Manager", "Research Manager", ResearchManagerInstruction)
 
 	for i := 0; i < o.cfg.MaxDebateRounds; i++ {
 		state.RLock()
@@ -521,11 +645,11 @@ Debate History:
 
 // RunRiskAndSizing executes the sizing and risk management debate.
 func (o *TradingOrchestrator) RunRiskAndSizing(ctx context.Context, state *checkpoint.TradingState) (string, cli.CLIState, error) {
-	traderAgent := NewAgent("Trader", "Trader", TraderInstruction, o.llmProvider)
-	aggRiskAgent := NewAgent("Aggressive Risk", "Aggressive Risk", AggressiveRiskInstruction, o.llmProvider)
-	conRiskAgent := NewAgent("Conservative Risk", "Conservative Risk", ConservativeRiskInstruction, o.llmProvider)
-	neuRiskAgent := NewAgent("Neutral Risk", "Neutral Risk", NeutralRiskInstruction, o.llmProvider)
-	pmAgent := NewAgent("Portfolio Manager", "Portfolio Manager", PortfolioManagerInstruction, o.llmProvider)
+	traderAgent := o.createAgent("Trader", "Trader", TraderInstruction)
+	aggRiskAgent := o.createAgent("Aggressive Risk", "Aggressive Risk", AggressiveRiskInstruction)
+	conRiskAgent := o.createAgent("Conservative Risk", "Conservative Risk", ConservativeRiskInstruction)
+	neuRiskAgent := o.createAgent("Neutral Risk", "Neutral Risk", NeutralRiskInstruction)
+	pmAgent := o.createAgent("Portfolio Manager", "Portfolio Manager", PortfolioManagerInstruction)
 
 	state.RLock()
 	market := state.AnalystReports["Market"]
@@ -607,13 +731,19 @@ Current History:
 
 	state.RLock()
 	history := state.RiskDebate.History
+	pastContext := state.Metadata["past_context"]
 	state.RUnlock()
+
+	lessonsLine := ""
+	if pastContext != "" {
+		lessonsLine = fmt.Sprintf("\n- Lessons from prior decisions and outcomes:\n%s\n", pastContext)
+	}
 
 	pmPrompt := fmt.Sprintf(`Review the complete risk debate history and trader proposal for %s, and make the final portfolio sizing decision.
 Trader Proposal:
 %s
-Risk Debate:
-%s`, state.Ticker, renderedProposal, history)
+%sRisk Debate:
+%s`, state.Ticker, renderedProposal, lessonsLine, history)
 
 	var decision PortfolioDecision
 	err = pmAgent.CallStructured(ctx, pmPrompt, &decision)

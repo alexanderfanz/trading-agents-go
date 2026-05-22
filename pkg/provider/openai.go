@@ -36,6 +36,25 @@ func NewOpenAIAdapter(apiKey, model string, debugDir string) *OpenAIAdapter {
 	return &OpenAIAdapter{client: client, model: model}
 }
 
+// NewOpenAICompatibleAdapter instantiates a new adapter pointing to a custom OpenAI-compatible endpoint.
+func NewOpenAICompatibleAdapter(apiKey, baseURL, model string, debugDir string) *OpenAIAdapter {
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(baseURL),
+	}
+
+	if debugDir != "" {
+		transport, err := NewDebugLoggingRoundTripper(http.DefaultTransport, debugDir)
+		if err == nil {
+			opts = append(opts, option.WithHTTPClient(&http.Client{Transport: transport}))
+		}
+	}
+
+	client := openai.NewClient(opts...)
+	return &OpenAIAdapter{client: client, model: model}
+}
+
+
 // Generate requests a standard natural-language response.
 func (a *OpenAIAdapter) Generate(ctx context.Context, req LLMRequest) (string, error) {
 	messages := make([]openai.ChatCompletionMessageParamUnion, 0)
