@@ -112,6 +112,7 @@ func (sm *YahooSessionManager) refresh(ctx context.Context) (string, string, err
 		return "", "", fmt.Errorf("fc request failed: %w", err)
 	}
 	defer resp1.Body.Close()
+	_, _ = io.Copy(io.Discard, resp1.Body)
 
 	u, err := url.Parse(sm.crumbURL)
 	if err != nil {

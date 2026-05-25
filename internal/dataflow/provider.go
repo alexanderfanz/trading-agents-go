@@ -80,6 +80,10 @@ func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, s
 	}
 
 	// 2. Fetch online if not cached
+	if r.sessionMgr == nil {
+		return nil, fmt.Errorf("session manager is not initialized")
+	}
+
 	cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
 	if err != nil {
 		// Fallback: search for any matching cache file if we are offline or query fails
@@ -135,7 +139,9 @@ func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url str
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
-		r.sessionMgr.Invalidate()
+		if r.sessionMgr != nil {
+			r.sessionMgr.Invalidate()
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -221,6 +227,9 @@ func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url str
 func (r *YahooFinanceCSVReader) FetchAndStreamOHLCV(ctx context.Context, pathOrURL string, tradeDate time.Time) ([]Candle, error) {
 	var input io.ReadCloser
 	if strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://") {
+		if r.sessionMgr == nil {
+			return nil, fmt.Errorf("session manager is not initialized")
+		}
 		cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get yahoo credentials: %w", err)
