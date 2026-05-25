@@ -3,6 +3,11 @@ name: Go CI
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/go-tests.yml'
   workflow_dispatch:
 
 jobs:
