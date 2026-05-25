@@ -15,6 +15,7 @@ import (
 // YahooSessionManager manages thread-safe caching and retrieval of Yahoo Finance session cookies and crumb tokens.
 type YahooSessionManager struct {
 	mu        sync.RWMutex
+	refreshMu sync.Mutex
 	cookie    string
 	crumb     string
 	expiresAt time.Time
@@ -46,13 +47,19 @@ func (sm *YahooSessionManager) GetCredentials(ctx context.Context) (string, stri
 		return cookie, crumb, nil
 	}
 
-	// 2. Write Lock slow-path sweep
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	// 2. Acquire refresh lock to serialize refresh attempts without blocking readers
+	sm.refreshMu.Lock()
+	defer sm.refreshMu.Unlock()
 
 	// Double-check to prevent dog-piling / redundant sweeps
-	if sm.cookie != "" && sm.crumb != "" && time.Now().Before(sm.expiresAt) {
-		return sm.cookie, sm.crumb, nil
+	sm.mu.RLock()
+	cookie = sm.cookie
+	crumb = sm.crumb
+	isValid = cookie != "" && crumb != "" && time.Now().Before(sm.expiresAt)
+	sm.mu.RUnlock()
+
+	if isValid {
+		return cookie, crumb, nil
 	}
 
 	cookieVal, crumbVal, err := sm.refresh(ctx)
@@ -60,9 +67,11 @@ func (sm *YahooSessionManager) GetCredentials(ctx context.Context) (string, stri
 		return "", "", fmt.Errorf("yahoo finance session sweep failed: %w", err)
 	}
 
+	sm.mu.Lock()
 	sm.cookie = cookieVal
 	sm.crumb = crumbVal
 	sm.expiresAt = time.Now().Add(24 * time.Hour) // Cache session credentials for 24 hours
+	sm.mu.Unlock()
 
 	return cookieVal, crumbVal, nil
 }
