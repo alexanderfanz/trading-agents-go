@@ -6,7 +6,17 @@
     [
       "@semantic-release/exec",
       {
-        "publishCmd": "printf '%s' \"$SEMANTIC_RELEASE_NEXT_RELEASE_NOTES\" > .release-notes.md && goreleaser release --release-notes .release-notes.md --clean"
+        "publishCmd": "goreleaser release --clean --skip=publish"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          "dist/*.tar.gz",
+          "dist/*.zip",
+          "dist/*_checksums.txt"
+        ]
       }
     ]
   ]
