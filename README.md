@@ -147,10 +147,10 @@ go build -o tradingagents cmd/tradingagents/main.go
 | `-max-debate-rounds` | `int` | Maximum turns for Bull/Bear research debates | `1` |
 | `-max-risk-rounds` | `int` | Maximum turns for Risk Sizing appetite debates | `1` |
 | `-enable-checkpoint` | `bool` | Enable checkpoint resumption for intermediate steps | `false` |
-| `-db-path` | `string` | SQLite WAL checkpoints database location | `~/.tradingagents/checkpoints.db` |
-| `-cache-dir` | `string` | Directory to cache downloaded Yahoo Finance CSV files | `~/.tradingagents/cache` |
-| `-results-dir` | `string` | Directory to write API logs and diagnostic tokens | `~/.tradingagents/logs` |
-| `-memory-path` | `string` | Cumulative decision-log journal output file | `~/.tradingagents/memory/trading_memory.md` |
+| `-db-path` | `string` | SQLite WAL checkpoints database location | `~/.tradingagentsgo/checkpoints.db` |
+| `-cache-dir` | `string` | Directory to cache downloaded Yahoo Finance CSV files | `~/.tradingagentsgo/cache` |
+| `-results-dir` | `string` | Directory to write API logs and diagnostic tokens | `~/.tradingagentsgo/logs` |
+| `-memory-path` | `string` | Cumulative decision-log journal output file | `~/.tradingagentsgo/memory/trading_memory.md` |
 | `-timeout` | `int` | Master execution timeout boundary in seconds | `300` |
 
 ### Environment Variable Overrides
@@ -162,9 +162,9 @@ The application automatically resolves configurations from system environment va
 | `TRADINGAGENTS_LLM_PROVIDER` | Default target LLM provider | `openai` |
 | `TRADINGAGENTS_DEEP_THINK_LLM` | Reasoning model for debates | `gpt-4o` |
 | `TRADINGAGENTS_QUICK_THINK_LLM` | Fast model for individual analysts | `gpt-4o-mini` |
-| `TRADINGAGENTS_RESULTS_DIR` | Directory to write execution result logs | `~/.tradingagents/logs` |
-| `TRADINGAGENTS_CACHE_DIR` | Target Yahoo Finance historical data cache folder | `~/.tradingagents/cache` |
-| `TRADINGAGENTS_MEMORY_LOG_PATH` | File path for the cumulative decision journal | `~/.tradingagents/memory/trading_memory.md` |
+| `TRADINGAGENTS_RESULTS_DIR` | Directory to write execution result logs | `~/.tradingagentsgo/logs` |
+| `TRADINGAGENTS_CACHE_DIR` | Target Yahoo Finance historical data cache folder | `~/.tradingagentsgo/cache` |
+| `TRADINGAGENTS_MEMORY_LOG_PATH` | File path for the cumulative decision journal | `~/.tradingagentsgo/memory/trading_memory.md` |
 | `TRADINGAGENTS_BENCHMARK_TICKER` | Benchmark symbol comparison index | `SPY` |
 | `TRADINGAGENTS_MAX_DEBATE_ROUNDS` | Consensus debate iteration limit | `1` |
 | `TRADINGAGENTS_MAX_RISK_ROUNDS` | Risk sizing dialogue iteration limit | `1` |

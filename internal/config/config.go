@@ -32,13 +32,13 @@ type Config struct {
 	ExecutionTimeout       int
 }
 
-// GetDefaultHome returns the standard home folder (~/.tradingagents) for local logs/cache.
+// GetDefaultHome returns the standard home folder (~/.tradingagentsgo) for local logs/cache.
 func GetDefaultHome() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "."
 	}
-	return filepath.Join(home, ".tradingagents")
+	return filepath.Join(home, ".tradingagentsgo")
 }
 
 // LoadConfig creates a default configuration and overrides keys with env-vars.
