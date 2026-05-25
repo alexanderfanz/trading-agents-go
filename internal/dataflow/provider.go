@@ -475,6 +475,9 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 		}
 	}
 
+	if r.sessionMgr == nil {
+		return "", fmt.Errorf("session manager is not initialized")
+	}
 	cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get yahoo credentials: %w", err)
