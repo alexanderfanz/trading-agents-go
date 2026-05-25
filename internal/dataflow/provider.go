@@ -248,9 +248,9 @@ func (r *YahooFinanceCSVReader) FetchAndStreamOHLCV(ctx context.Context, pathOrU
 
 		if !strings.Contains(pathOrURL, "crumb=") {
 			if strings.Contains(pathOrURL, "?") {
-				pathOrURL = fmt.Sprintf("%s&crumb=%s", pathOrURL, crumb)
+				pathOrURL = fmt.Sprintf("%s&crumb=%s", pathOrURL, url.QueryEscape(crumb))
 			} else {
-				pathOrURL = fmt.Sprintf("%s?crumb=%s", pathOrURL, crumb)
+				pathOrURL = fmt.Sprintf("%s?crumb=%s", pathOrURL, url.QueryEscape(crumb))
 			}
 		}
 
