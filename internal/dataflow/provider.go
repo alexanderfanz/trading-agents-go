@@ -51,6 +51,31 @@ func NewYahooFinanceCSVReader(client *ResilientHTTPClient, cacheDir string) *Yah
 	}
 }
 
+// chartResponse represents the JSON response structure of the Yahoo Finance v8 chart API.
+type chartResponse struct {
+	Chart struct {
+		Result []struct {
+			Meta struct {
+				GMTOffset int `json:"gmtoffset"`
+			} `json:"meta"`
+			Timestamp  []int64 `json:"timestamp"`
+			Indicators struct {
+				Quote []struct {
+					Open   []*float64 `json:"open"`
+					High   []*float64 `json:"high"`
+					Low    []*float64 `json:"low"`
+					Close  []*float64 `json:"close"`
+					Volume []*float64 `json:"volume"`
+				} `json:"quote"`
+				Adjclose []struct {
+					Adjclose []*float64 `json:"adjclose"`
+				} `json:"adjclose"`
+			} `json:"indicators"`
+		} `json:"result"`
+		Error interface{} `json:"error"`
+	} `json:"chart"`
+}
+
 // FetchOHLCV retrieves prices, utilizing caching and strict look-ahead filtering.
 func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, start, end time.Time, tradeDate time.Time) ([]Candle, error) {
 	safeTicker := strings.Map(func(r rune) rune {
@@ -79,28 +104,12 @@ func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, s
 		}
 	}
 
-	// 2. Fetch online if not cached
-	if r.sessionMgr == nil {
-		return nil, fmt.Errorf("session manager is not initialized")
-	}
-
-	cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
-	if err != nil {
-		// Fallback: search for any matching cache file if we are offline or query fails
-		if r.cacheDir != "" {
-			matches, globErr := filepath.Glob(filepath.Join(r.cacheDir, fmt.Sprintf("%s-YFin-data-*.csv", safeTicker)))
-			if globErr == nil && len(matches) > 0 {
-				return r.FetchAndStreamOHLCV(ctx, matches[0], tradeDate)
-			}
-		}
-		return nil, fmt.Errorf("failed to fetch yahoo credentials: %w", err)
-	}
-
+	// 2. Fetch online if not cached using resilient v8 chart JSON API (no crumb/cookie required)
 	startUnix := start5Y.Unix()
 	endUnix := today.Unix()
-	downloadURL := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%d&period2=%d&interval=1d&events=history&includeAdjustedClose=true&crumb=%s", ticker, startUnix, endUnix, crumb)
+	chartURL := fmt.Sprintf("https://query2.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d&includePrePost=false&events=div,splits", ticker, startUnix, endUnix)
 
-	candles, err := r.fetchOnlineAndCache(ctx, downloadURL, cookie, dataFile, tradeDate)
+	candles, err := r.fetchOnlineAndCacheChart(ctx, chartURL, dataFile, tradeDate)
 	if err != nil {
 		// Fallback: search for any matching cache file if we are offline or query fails
 		if r.cacheDir != "" {
@@ -115,16 +124,13 @@ func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, s
 	return candles, nil
 }
 
-func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url string, cookie string, dataFile string, tradeDate time.Time) ([]Candle, error) {
+func (r *YahooFinanceCSVReader) fetchOnlineAndCacheChart(ctx context.Context, url string, dataFile string, tradeDate time.Time) ([]Candle, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	if cookie != "" {
-		req.Header.Set("Cookie", cookie)
-	}
 
 	var resp *http.Response
 	if r.client != nil {
@@ -132,92 +138,97 @@ func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url str
 	} else {
 		resp, err = http.DefaultClient.Do(req)
 	}
-
 	if err != nil {
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
-		if r.sessionMgr != nil {
-			r.sessionMgr.Invalidate()
-		}
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("server responded with status %d", resp.StatusCode)
 	}
 
-	// Write response body to temp file, then rename to cache to ensure atomic write
-	var tempFile *os.File
+	var cResp chartResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cResp); err != nil {
+		return nil, fmt.Errorf("failed to decode chart JSON: %w", err)
+	}
+
+	if len(cResp.Chart.Result) == 0 {
+		return nil, fmt.Errorf("no chart result found")
+	}
+
+	res := cResp.Chart.Result[0]
+	if len(res.Timestamp) == 0 {
+		return nil, fmt.Errorf("no timestamp data in chart result")
+	}
+
+	if len(res.Indicators.Quote) == 0 {
+		return nil, fmt.Errorf("no quotes in chart result")
+	}
+	quote := res.Indicators.Quote[0]
+
+	var adjQuotes []*float64
+	if len(res.Indicators.Adjclose) > 0 {
+		adjQuotes = res.Indicators.Adjclose[0].Adjclose
+	}
+
+	gmtOffset := res.Meta.GMTOffset
+	loc := time.FixedZone("Exchange", gmtOffset)
+
+	var csvLines []string
+	csvLines = append(csvLines, "Date,Open,High,Low,Close,Adj Close,Volume")
+
+	candles := make([]Candle, 0, len(res.Timestamp))
+
+	for i, ts := range res.Timestamp {
+		if i >= len(quote.Open) || i >= len(quote.High) || i >= len(quote.Low) || i >= len(quote.Close) || i >= len(quote.Volume) {
+			break
+		}
+
+		if quote.Open[i] == nil || quote.High[i] == nil || quote.Low[i] == nil || quote.Close[i] == nil || quote.Volume[i] == nil {
+			continue
+		}
+
+		o := *quote.Open[i]
+		h := *quote.High[i]
+		l := *quote.Low[i]
+		c := *quote.Close[i]
+		v := *quote.Volume[i]
+
+		adj := c
+		if i < len(adjQuotes) && adjQuotes[i] != nil {
+			adj = *adjQuotes[i]
+		}
+
+		dateVal := time.Unix(ts, 0).In(loc)
+		dateStr := dateVal.Format("2006-01-02")
+
+		// Create CSV line in same format: Date,Open,High,Low,Close,Adj Close,Volume
+		csvLines = append(csvLines, fmt.Sprintf("%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f", dateStr, o, h, l, c, adj, v))
+
+		// Discard future candles based on tradeDate (look-ahead bias filter)
+		if dateVal.After(tradeDate) {
+			continue
+		}
+
+		candles = append(candles, Candle{
+			Time:   dateVal,
+			Open:   o,
+			High:   h,
+			Low:    l,
+			Close:  c,
+			Volume: v,
+		})
+	}
+
+	// Write response body formatted as CSV to temp file, then rename to cache to ensure atomic write
 	if dataFile != "" {
-		tempFile, err = os.CreateTemp(filepath.Dir(dataFile), "yfin-*.tmp")
-	}
-
-	// Read and parse
-	candles := make([]Candle, 0, 512)
-	reader := bufio.NewReaderSize(resp.Body, 64*1024)
-
-	// Stream tokenizer processing
-	header, err := reader.ReadSlice('\n')
-	if err != nil {
-		if tempFile != nil {
+		csvData := strings.Join(csvLines, "\n") + "\n"
+		tempFile, err := os.CreateTemp(filepath.Dir(dataFile), "yfin-*.tmp")
+		if err == nil {
+			_, _ = tempFile.WriteString(csvData)
 			_ = tempFile.Close()
-			_ = os.Remove(tempFile.Name())
+			_ = os.Rename(tempFile.Name(), dataFile)
 		}
-		return nil, fmt.Errorf("failed to parse CSV header: %w", err)
-	}
-
-	if tempFile != nil {
-		_, _ = tempFile.Write(header)
-	}
-
-	for {
-		line, err := reader.ReadSlice('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if len(line) == 0 {
-					break
-				}
-			} else {
-				if tempFile != nil {
-					_ = tempFile.Close()
-					_ = os.Remove(tempFile.Name())
-				}
-				return nil, fmt.Errorf("failed reading stream line: %w", err)
-			}
-		}
-
-		if tempFile != nil {
-			_, _ = tempFile.Write(line)
-		}
-
-		// Clean carriage returns
-		if len(line) > 0 && line[len(line)-1] == '\n' {
-			line = line[:len(line)-1]
-		}
-		if len(line) > 0 && line[len(line)-1] == '\r' {
-			line = line[:len(line)-1]
-		}
-
-		if len(line) == 0 {
-			continue
-		}
-
-		candle, valid, parseErr := parseCSVRowFast(line, tradeDate)
-		if parseErr != nil {
-			continue
-		}
-		if !valid {
-			continue
-		}
-
-		candles = append(candles, candle)
-	}
-
-	if tempFile != nil {
-		_ = tempFile.Close()
-		_ = os.Rename(tempFile.Name(), dataFile)
 	}
 
 	return candles, nil
