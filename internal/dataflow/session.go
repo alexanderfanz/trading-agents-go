@@ -113,47 +113,19 @@ func (sm *YahooSessionManager) refresh(ctx context.Context) (string, string, err
 	}
 	defer resp1.Body.Close()
 
-	// Locate A3 or B cookie, or fall back to first cookie present
-	var targetCookie *http.Cookie
-	for _, c := range resp1.Cookies() {
-		if c.Name == "A3" || c.Name == "B" {
-			targetCookie = c
-			break
-		}
+	u, err := url.Parse(sm.crumbURL)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse crumb URL: %w", err)
 	}
-
-	// If not found in response cookies directly, check the jar
-	if targetCookie == nil {
-		u, err := url.Parse(sm.fcURL)
-		if err == nil {
-			for _, c := range jar.Cookies(u) {
-				if c.Name == "A3" || c.Name == "B" {
-					targetCookie = c
-					break
-				}
-			}
-		}
+	cookies := jar.Cookies(u)
+	if len(cookies) == 0 {
+		return "", "", fmt.Errorf("no cookies returned during session sweep from %s", sm.fcURL)
 	}
-
-	// Fallback to first available cookie
-	if targetCookie == nil && len(resp1.Cookies()) > 0 {
-		targetCookie = resp1.Cookies()[0]
+	var cookieParts []string
+	for _, c := range cookies {
+		cookieParts = append(cookieParts, fmt.Sprintf("%s=%s", c.Name, c.Value))
 	}
-	if targetCookie == nil {
-		u, err := url.Parse(sm.fcURL)
-		if err == nil {
-			cookies := jar.Cookies(u)
-			if len(cookies) > 0 {
-				targetCookie = cookies[0]
-			}
-		}
-	}
-
-	if targetCookie == nil {
-		return "", "", fmt.Errorf("no cookie returned during session sweep from %s", sm.fcURL)
-	}
-
-	cookieVal := fmt.Sprintf("%s=%s", targetCookie.Name, targetCookie.Value)
+	cookieVal := strings.Join(cookieParts, "; ")
 
 	// Step 2: GET query2.finance.yahoo.com/v1/test/getcrumb with Step 1 cookie in header
 	req2, err := http.NewRequestWithContext(ctx, "GET", sm.crumbURL, nil)
