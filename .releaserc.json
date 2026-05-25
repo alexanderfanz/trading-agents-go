@@ -6,9 +6,18 @@
     [
       "@semantic-release/exec",
       {
-        "publishCmd": "goreleaser release --clean"
+        "prepareCmd": "goreleaser release --clean --skip=publish"
       }
     ],
-    "@semantic-release/github"
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          "dist/*.tar.gz",
+          "dist/*.zip",
+          "dist/*_checksums.txt"
+        ]
+      }
+    ]
   ]
 }
