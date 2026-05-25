@@ -14,6 +14,7 @@ import (
 	"trading-agents-go/internal/dataflow"
 	"trading-agents-go/internal/indicators"
 	"trading-agents-go/internal/memory"
+	"trading-agents-go/internal/report"
 	"trading-agents-go/pkg/provider"
 )
 
@@ -264,6 +265,31 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	}
 
 	// 5. Phase E: Finalization & Cleanup
+	state.RLock()
+	if o.cfg.CreateLocalReports {
+		reportData := &report.ReportData{
+			Ticker:             ticker,
+			TradeDate:          tradeDate,
+			Timestamp:          time.Now(),
+			MarketReport:       state.AnalystReports["Market"],
+			SentimentReport:    state.AnalystReports["Sentiment"],
+			NewsReport:         state.AnalystReports["News"],
+			FundamentalsReport: state.AnalystReports["Fundamentals"],
+			BullDebate:         strings.Join(state.BullDebateHistory, "\n\n---\n\n"),
+			BearDebate:         strings.Join(state.BearDebateHistory, "\n\n---\n\n"),
+			ResearchPlan:       state.InvestmentPlan,
+			TraderProposal:     state.TraderInvestmentPlan,
+			AggressiveRisk:     strings.Join(state.AggressiveRiskHistory, "\n\n---\n\n"),
+			ConservativeRisk:   strings.Join(state.ConservativeRiskHistory, "\n\n---\n\n"),
+			NeutralRisk:        strings.Join(state.NeutralRiskHistory, "\n\n---\n\n"),
+			FinalDecision:      state.FinalTradeDecision,
+		}
+		state.RUnlock()
+		_ = report.GenerateLocalReports(reportData, o.cfg.LocalReportsDir)
+	} else {
+		state.RUnlock()
+	}
+
 	if err := o.checkpointer.Clear(ctx, ticker, tradeDate); err != nil {
 		return "", fmt.Errorf("failed to clear checkpoint: %w", err)
 	}
@@ -587,6 +613,9 @@ Current Debate History:
 			return "", cli.StateNeutral, fmt.Errorf("bull analyst failed: %w", err)
 		}
 		AddDebateMessage(state, "Bull Analyst", bullOut)
+		state.Lock()
+		state.BullDebateHistory = append(state.BullDebateHistory, bullOut)
+		state.Unlock()
 
 		state.RLock()
 		history = state.InvestmentDebate.History
@@ -605,6 +634,9 @@ Current Debate History:
 			return "", cli.StateNeutral, fmt.Errorf("bear analyst failed: %w", err)
 		}
 		AddDebateMessage(state, "Bear Analyst", bearOut)
+		state.Lock()
+		state.BearDebateHistory = append(state.BearDebateHistory, bearOut)
+		state.Unlock()
 	}
 
 	state.RLock()
@@ -694,6 +726,7 @@ Current History:
 		state.Lock()
 		state.RiskDebate.History += "\nAggressive Risk: " + aggOut
 		state.RiskDebate.Count++
+		state.AggressiveRiskHistory = append(state.AggressiveRiskHistory, aggOut)
 		state.Unlock()
 
 		state.RLock()
@@ -710,6 +743,7 @@ Current History:
 		state.Lock()
 		state.RiskDebate.History += "\nConservative Risk: " + conOut
 		state.RiskDebate.Count++
+		state.ConservativeRiskHistory = append(state.ConservativeRiskHistory, conOut)
 		state.Unlock()
 
 		state.RLock()
@@ -726,6 +760,7 @@ Current History:
 		state.Lock()
 		state.RiskDebate.History += "\nNeutral Risk: " + neuOut
 		state.RiskDebate.Count++
+		state.NeutralRiskHistory = append(state.NeutralRiskHistory, neuOut)
 		state.Unlock()
 	}
 

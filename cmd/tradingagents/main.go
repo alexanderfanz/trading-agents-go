@@ -41,6 +41,8 @@ func main() {
 	memoryPath := flag.String("memory-path", cfg.MemoryLogPath, "Path to write cumulative decision memory md")
 	dbPath := flag.String("db-path", filepath.Join(config.GetDefaultHome(), "checkpoints.db"), "Path to sqlite checkpoints database")
 	timeoutFlag := flag.Int("timeout", cfg.ExecutionTimeout, "Master execution timeout boundary in seconds")
+	createLocalReports := flag.Bool("enable-local-reports", cfg.CreateLocalReports, "Enable report generation in local directory")
+	localReportsDir := flag.String("local-reports-dir", cfg.LocalReportsDir, "Directory to compile structured markdown reports")
 	help := flag.Bool("h", false, "Show help usage description")
 	flag.BoolVar(help, "help", false, "Show help usage description")
 
@@ -63,6 +65,8 @@ func main() {
 	cfg.DataCacheDir = *cacheDir
 	cfg.MemoryLogPath = *memoryPath
 	cfg.ExecutionTimeout = *timeoutFlag
+	cfg.CreateLocalReports = *createLocalReports
+	cfg.LocalReportsDir = *localReportsDir
 
 	// 4. Initialize Terminal Controller for Theme Styling & Piping checks
 	cliController := cli.NewCLIController()

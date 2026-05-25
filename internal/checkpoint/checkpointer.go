@@ -59,12 +59,17 @@ type TradingState struct {
 	UpdatedTimestamp int64             `json:"updated_timestamp" gob:"updated_timestamp"`
 
 	// Orchestrator support fields
-	InvestmentDebate     InvestDebateState `json:"investment_debate" gob:"investment_debate"`
-	InvestmentPlan       string            `json:"investment_plan" gob:"investment_plan"`
-	AnalystReports       map[string]string `json:"analyst_reports" gob:"analyst_reports"`
-	TraderInvestmentPlan string            `json:"trader_investment_plan" gob:"trader_investment_plan"`
-	RiskDebate           RiskDebateState   `json:"risk_debate" gob:"risk_debate"`
-	FinalTradeDecision   string            `json:"final_trade_decision" gob:"final_trade_decision"`
+	InvestmentDebate        InvestDebateState `json:"investment_debate" gob:"investment_debate"`
+	InvestmentPlan          string            `json:"investment_plan" gob:"investment_plan"`
+	AnalystReports          map[string]string `json:"analyst_reports" gob:"analyst_reports"`
+	TraderInvestmentPlan    string            `json:"trader_investment_plan" gob:"trader_investment_plan"`
+	RiskDebate              RiskDebateState   `json:"risk_debate" gob:"risk_debate"`
+	FinalTradeDecision      string            `json:"final_trade_decision" gob:"final_trade_decision"`
+	BullDebateHistory       []string          `json:"bull_debate_history" gob:"bull_debate_history"`
+	BearDebateHistory       []string          `json:"bear_debate_history" gob:"bear_debate_history"`
+	AggressiveRiskHistory   []string          `json:"aggressive_risk_history" gob:"aggressive_risk_history"`
+	ConservativeRiskHistory []string          `json:"conservative_risk_history" gob:"conservative_risk_history"`
+	NeutralRiskHistory      []string          `json:"neutral_risk_history" gob:"neutral_risk_history"`
 }
 
 // Lock locks the state for thread-safe mutations.

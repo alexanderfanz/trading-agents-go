@@ -30,6 +30,8 @@ type Config struct {
 	GlobalNewsLookbackDays int
 	BenchmarkTicker        string
 	ExecutionTimeout       int
+	CreateLocalReports     bool
+	LocalReportsDir        string
 }
 
 // GetDefaultHome returns the standard home folder (~/.tradingagentsgo) for local logs/cache.
@@ -68,6 +70,8 @@ func LoadConfig() *Config {
 		GlobalNewsLookbackDays: 7,
 		BenchmarkTicker:        "SPY",
 		ExecutionTimeout:       300,
+		CreateLocalReports:     true,
+		LocalReportsDir:        "reports",
 	}
 
 	// 2. Resolve specific overrides from the environment variables
@@ -119,6 +123,13 @@ func LoadConfig() *Config {
 	// Boolean variables
 	if v := os.Getenv("TRADINGAGENTS_CHECKPOINT_ENABLED"); v != "" {
 		cfg.CheckpointEnabled = strings.ToLower(v) == "true" || v == "1" || strings.ToLower(v) == "yes"
+	}
+
+	if v := os.Getenv("TRADINGAGENTS_CREATE_LOCAL_REPORTS"); v != "" {
+		cfg.CreateLocalReports = strings.ToLower(v) == "true" || v == "1" || strings.ToLower(v) == "yes"
+	}
+	if v := os.Getenv("TRADINGAGENTS_LOCAL_REPORTS_DIR"); v != "" {
+		cfg.LocalReportsDir = v
 	}
 
 	return cfg
