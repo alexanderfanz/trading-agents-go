@@ -494,7 +494,7 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 		return "", fmt.Errorf("failed to get yahoo credentials: %w", err)
 	}
 
-	url := fmt.Sprintf("https://query2.finance.yahoo.com/v10/finance/quoteSummary/%s?modules=assetProfile,financialData,defaultKeyStatistics,summaryDetail,price&crumb=%s", ticker, crumb)
+	url := fmt.Sprintf("https://query2.finance.yahoo.com/v10/finance/quoteSummary/%s?modules=assetProfile,financialData,defaultKeyStatistics,summaryDetail,price&crumb=%s", ticker, url.QueryEscape(crumb))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", err
