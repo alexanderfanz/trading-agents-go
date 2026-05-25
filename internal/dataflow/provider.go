@@ -37,15 +37,17 @@ type DataProvider interface {
 
 // YahooFinanceCSVReader handles zero-allocation-on-hot-path CSV ingestion.
 type YahooFinanceCSVReader struct {
-	client   *ResilientHTTPClient
-	cacheDir string
+	client     *ResilientHTTPClient
+	cacheDir   string
+	sessionMgr *YahooSessionManager
 }
 
 // NewYahooFinanceCSVReader instantiates a new reader.
 func NewYahooFinanceCSVReader(client *ResilientHTTPClient, cacheDir string) *YahooFinanceCSVReader {
 	return &YahooFinanceCSVReader{
-		client:   client,
-		cacheDir: cacheDir,
+		client:     client,
+		cacheDir:   cacheDir,
+		sessionMgr: NewYahooSessionManager(),
 	}
 }
 
@@ -78,11 +80,23 @@ func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, s
 	}
 
 	// 2. Fetch online if not cached
+	cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
+	if err != nil {
+		// Fallback: search for any matching cache file if we are offline or query fails
+		if r.cacheDir != "" {
+			matches, globErr := filepath.Glob(filepath.Join(r.cacheDir, fmt.Sprintf("%s-YFin-data-*.csv", safeTicker)))
+			if globErr == nil && len(matches) > 0 {
+				return r.FetchAndStreamOHLCV(ctx, matches[0], tradeDate)
+			}
+		}
+		return nil, fmt.Errorf("failed to fetch yahoo credentials: %w", err)
+	}
+
 	startUnix := start5Y.Unix()
 	endUnix := today.Unix()
-	downloadURL := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%d&period2=%d&interval=1d&events=history&includeAdjustedClose=true", ticker, startUnix, endUnix)
+	downloadURL := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%d&period2=%d&interval=1d&events=history&includeAdjustedClose=true&crumb=%s", ticker, startUnix, endUnix, crumb)
 
-	candles, err := r.fetchOnlineAndCache(ctx, downloadURL, dataFile, tradeDate)
+	candles, err := r.fetchOnlineAndCache(ctx, downloadURL, cookie, dataFile, tradeDate)
 	if err != nil {
 		// Fallback: search for any matching cache file if we are offline or query fails
 		if r.cacheDir != "" {
@@ -97,10 +111,15 @@ func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, s
 	return candles, nil
 }
 
-func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url string, dataFile string, tradeDate time.Time) ([]Candle, error) {
+func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url string, cookie string, dataFile string, tradeDate time.Time) ([]Candle, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
 	}
 
 	var resp *http.Response
@@ -114,6 +133,10 @@ func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url str
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
+		r.sessionMgr.Invalidate()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("server responded with status %d", resp.StatusCode)
@@ -198,10 +221,29 @@ func (r *YahooFinanceCSVReader) fetchOnlineAndCache(ctx context.Context, url str
 func (r *YahooFinanceCSVReader) FetchAndStreamOHLCV(ctx context.Context, pathOrURL string, tradeDate time.Time) ([]Candle, error) {
 	var input io.ReadCloser
 	if strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://") {
+		cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get yahoo credentials: %w", err)
+		}
+
+		if !strings.Contains(pathOrURL, "crumb=") {
+			if strings.Contains(pathOrURL, "?") {
+				pathOrURL = fmt.Sprintf("%s&crumb=%s", pathOrURL, crumb)
+			} else {
+				pathOrURL = fmt.Sprintf("%s?crumb=%s", pathOrURL, crumb)
+			}
+		}
+
 		req, err := http.NewRequestWithContext(ctx, "GET", pathOrURL, nil)
 		if err != nil {
 			return nil, err
 		}
+
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+		if cookie != "" {
+			req.Header.Set("Cookie", cookie)
+		}
+
 		var resp *http.Response
 		if r.client != nil {
 			resp, err = r.client.Do(req)
@@ -211,6 +253,11 @@ func (r *YahooFinanceCSVReader) FetchAndStreamOHLCV(ctx context.Context, pathOrU
 		if err != nil {
 			return nil, err
 		}
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
+			r.sessionMgr.Invalidate()
+		}
+
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			return nil, fmt.Errorf("server responded with status %d", resp.StatusCode)
@@ -419,10 +466,20 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 		}
 	}
 
-	url := fmt.Sprintf("https://query2.finance.yahoo.com/v10/finance/quoteSummary/%s?modules=assetProfile,financialData,defaultKeyStatistics,summaryDetail,price", ticker)
+	cookie, crumb, err := r.sessionMgr.GetCredentials(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get yahoo credentials: %w", err)
+	}
+
+	url := fmt.Sprintf("https://query2.finance.yahoo.com/v10/finance/quoteSummary/%s?modules=assetProfile,financialData,defaultKeyStatistics,summaryDetail,price&crumb=%s", ticker, crumb)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
 	}
 
 	var resp *http.Response
@@ -435,6 +492,10 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 		return "", fmt.Errorf("failed fetching fundamentals: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
+		r.sessionMgr.Invalidate()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("fundamentals server returned status %d", resp.StatusCode)
