@@ -12,6 +12,9 @@ bin/
 # Compiled binaries
 /tradingagents
 
+#reports
+/reports
+
 # Test coverage
 *.out
 *.test
