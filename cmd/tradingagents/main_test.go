@@ -91,6 +91,12 @@ func TestMainHelp(t *testing.T) {
 	if !strings.Contains(stdout, "TradingAgents Go Orchestrator - Usage Guide") {
 		t.Errorf("expected usage guide in output, got: %s", stdout)
 	}
+	if !strings.Contains(stdout, "Version:") {
+		t.Errorf("expected version in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Build date:") {
+		t.Errorf("expected build date in output, got: %s", stdout)
+	}
 	if !strings.Contains(stdout, "-ticker") {
 		t.Errorf("expected flag defaults in stdout, got: %s", stdout)
 	}

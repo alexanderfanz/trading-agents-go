@@ -23,6 +23,11 @@ import (
 	"trading-agents-go/pkg/provider"
 )
 
+var (
+	version   = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -58,6 +63,8 @@ func run(args []string) int {
 
 	if *help {
 		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
+		fmt.Printf("Version: %s\n", version)
+		fmt.Printf("Build date: %s\n", buildDate)
 		flags.SetOutput(os.Stdout)
 		flags.PrintDefaults()
 		return 0

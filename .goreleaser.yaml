@@ -7,6 +7,10 @@ before:
 
 builds:
   - main: ./cmd/tradingagents
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Tag }}
+      - -X main.buildDate={{ .Date }}
     env:
       - CGO_ENABLED=0
     goos:
