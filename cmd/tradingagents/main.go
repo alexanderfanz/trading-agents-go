@@ -58,6 +58,7 @@ func run(args []string) int {
 
 	if *help {
 		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
+		flags.SetOutput(os.Stdout)
 		flags.PrintDefaults()
 		return 0
 	}
