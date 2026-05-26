@@ -369,18 +369,38 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 	})
 
 	// Test Bollinger resolver
-	for _, ind := range []string{"boll", "boll_ub", "boll_lb"} {
-		t.Run(ind, func(t *testing.T) {
-			resolver := newResolver()
-			val, err := resolver.Resolve(context.Background(), candles, "TEST", ind, tradeDate)
-			if err != nil {
-				t.Fatalf("Resolve %s failed: %v", ind, err)
-			}
-			if val == 0 {
-				t.Errorf("Resolve %s returned 0", ind)
-			}
-		})
-	}
+	t.Run("boll", func(t *testing.T) {
+		resolver := newResolver()
+		val, err := resolver.Resolve(context.Background(), candles, "TEST", "boll", tradeDate)
+		if err != nil {
+			t.Fatalf("Resolve boll failed: %v", err)
+		}
+		if math.Abs(val-141.5) > 1e-9 {
+			t.Errorf("Expected boll to be 141.5, got %f", val)
+		}
+	})
+	t.Run("boll_ub", func(t *testing.T) {
+		resolver := newResolver()
+		val, err := resolver.Resolve(context.Background(), candles, "TEST", "boll_ub", tradeDate)
+		if err != nil {
+			t.Fatalf("Resolve boll_ub failed: %v", err)
+		}
+		expected := 141.5 + 2.0*math.Sqrt(33.25)
+		if math.Abs(val-expected) > 1e-9 {
+			t.Errorf("Expected boll_ub to be %f, got %f", expected, val)
+		}
+	})
+	t.Run("boll_lb", func(t *testing.T) {
+		resolver := newResolver()
+		val, err := resolver.Resolve(context.Background(), candles, "TEST", "boll_lb", tradeDate)
+		if err != nil {
+			t.Fatalf("Resolve boll_lb failed: %v", err)
+		}
+		expected := 141.5 - 2.0*math.Sqrt(33.25)
+		if math.Abs(val-expected) > 1e-9 {
+			t.Errorf("Expected boll_lb to be %f, got %f", expected, val)
+		}
+	})
 
 	// Test Bollinger insufficient data error
 	t.Run("Bollinger Insufficient Data", func(t *testing.T) {
@@ -437,8 +457,8 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Resolve mfi failed: %v", err)
 		}
-		if valMFI == 0 {
-			t.Error("Resolve mfi returned 0")
+		if math.Abs(valMFI-100.0) > 1e-9 {
+			t.Errorf("Expected MFI to be 100.0, got %f", valMFI)
 		}
 	})
 
@@ -462,18 +482,24 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 	// Test dynamic EMA
 	t.Run("Dynamic EMA", func(t *testing.T) {
 		resolver := newResolver()
-		_, err := resolver.Resolve(context.Background(), candles, "TEST", "close_3_ema", tradeDate)
+		val, err := resolver.Resolve(context.Background(), candles, "TEST", "close_3_ema", tradeDate)
 		if err != nil {
 			t.Fatalf("Resolve close_3_ema failed: %v", err)
+		}
+		if math.Abs(val-150.0) > 1e-9 {
+			t.Errorf("Expected close_3_ema to be 150.0, got %f", val)
 		}
 	})
 
 	// Test dynamic RSI
 	t.Run("Dynamic RSI", func(t *testing.T) {
 		resolver := newResolver()
-		_, err := resolver.Resolve(context.Background(), candles, "TEST", "close_3_rsi", tradeDate)
+		val, err := resolver.Resolve(context.Background(), candles, "TEST", "close_3_rsi", tradeDate)
 		if err != nil {
 			t.Fatalf("Resolve close_3_rsi failed: %v", err)
+		}
+		if math.Abs(val-100.0) > 1e-9 {
+			t.Errorf("Expected close_3_rsi to be 100.0, got %f", val)
 		}
 	})
 
