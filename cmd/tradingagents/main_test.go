@@ -249,10 +249,10 @@ Free Cash Flow: 100000.00
 
 	oldTransport := http.DefaultTransport
 	oldDefaultClientTransport := http.DefaultClient.Transport
-	defer func() {
+	t.Cleanup(func() {
 		http.DefaultTransport = oldTransport
 		http.DefaultClient.Transport = oldDefaultClientTransport
-	}()
+	})
 	http.DefaultTransport = mockRT
 	http.DefaultClient.Transport = mockRT
 
