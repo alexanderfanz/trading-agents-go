@@ -112,18 +112,20 @@ func TestReflectOnFinalDecision(t *testing.T) {
 }
 
 func TestResolvePendingEntries_edgeCases(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "reflector_edge_test")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	logFile := filepath.Join(tmpDir, "test_memory.md")
-	log := NewTradingMemoryLog(logFile, 0)
 	reflector := NewReflector(&mockLLMProvider{reply: "reflection"})
 	ctx := context.Background()
 
+	setupLog := func(t *testing.T) *TradingMemoryLog {
+		tmpDir, err := os.MkdirTemp("", "reflector_edge_test")
+		if err != nil {
+			t.Fatalf("failed to create temp dir: %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+		return NewTradingMemoryLog(filepath.Join(tmpDir, "test_memory.md"), 0)
+	}
+
 	t.Run("no pending for ticker", func(t *testing.T) {
+		log := setupLog(t)
 		_ = log.StoreDecision("AAPL", "2026-05-10", "Rating: Buy\nBuy AAPL.")
 		if err := ResolvePendingEntries(ctx, "MSFT", log, reflector, &mockDataProvider{}, ""); err != nil {
 			t.Fatalf("ResolvePendingEntries: %v", err)
@@ -135,6 +137,7 @@ func TestResolvePendingEntries_edgeCases(t *testing.T) {
 	})
 
 	t.Run("skips trade still within holding period", func(t *testing.T) {
+		log := setupLog(t)
 		recent := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 		_ = log.StoreDecision("TSLA", recent, "Rating: Buy\nRecent trade.")
 		if err := ResolvePendingEntries(ctx, "TSLA", log, reflector, &mockDataProvider{}, "SPY"); err != nil {
@@ -149,18 +152,28 @@ func TestResolvePendingEntries_edgeCases(t *testing.T) {
 	})
 
 	t.Run("skips invalid trade date", func(t *testing.T) {
+		log := setupLog(t)
 		_ = log.StoreDecision("NVDA", "not-a-date", "Rating: Buy\nBad date.")
 		if err := ResolvePendingEntries(ctx, "NVDA", log, reflector, &mockDataProvider{}, "SPY"); err != nil {
 			t.Fatalf("ResolvePendingEntries: %v", err)
 		}
+		entries, _ := log.LoadEntries()
+		if len(entries) != 1 || !entries[0].Pending {
+			t.Fatalf("expected NVDA entry to remain pending due to invalid date, got %+v", entries)
+		}
 	})
 
 	t.Run("skips when data provider errors", func(t *testing.T) {
+		log := setupLog(t)
 		oldDate := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
 		_ = log.StoreDecision("AMD", oldDate, "Rating: Buy\nOld trade.")
 		dp := &mockDataProvider{err: errors.New("market data down")}
 		if err := ResolvePendingEntries(ctx, "AMD", log, reflector, dp, "SPY"); err != nil {
 			t.Fatalf("ResolvePendingEntries: %v", err)
+		}
+		entries, _ := log.LoadEntries()
+		if len(entries) != 1 || !entries[0].Pending {
+			t.Fatalf("expected AMD entry to remain pending due to data provider error, got %+v", entries)
 		}
 	})
 }
@@ -170,7 +183,7 @@ func TestResolvePendingEntries_resolvesJapanTicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	logFile := filepath.Join(tmpDir, "test_memory.md")
 	log := NewTradingMemoryLog(logFile, 0)
