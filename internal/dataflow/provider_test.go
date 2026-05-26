@@ -35,7 +35,7 @@ func loadTestFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-func newMockSessionManager(t *testing.T) (*YahooSessionManager, *httptest.Server) {
+func newMockSessionManager(t *testing.T) *YahooSessionManager {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -66,7 +66,7 @@ func newMockSessionManager(t *testing.T) (*YahooSessionManager, *httptest.Server
 		fcURL:    server.URL + "/fc",
 		crumbURL: server.URL + "/getcrumb",
 	}
-	return sm, server
+	return sm
 }
 
 func assertNoLookAhead(t *testing.T, candles []Candle, tradeDate time.Time) {
@@ -116,8 +116,8 @@ func TestFetchOHLCV_CacheHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if atomic.LoadInt32(&httpHits) != 0 {
-		t.Fatalf("expected no HTTP requests on cache hit, got %d", httpHits)
+	if hits := atomic.LoadInt32(&httpHits); hits != 0 {
+		t.Fatalf("expected no HTTP requests on cache hit, got %d", hits)
 	}
 	if len(candles) != 3 {
 		t.Fatalf("expected 3 candles (look-ahead filtered), got %d", len(candles))
@@ -152,8 +152,8 @@ func TestFetchOHLCV_OnlineChartMock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if atomic.LoadInt32(&chartHits) != 1 {
-		t.Fatalf("expected exactly 1 chart request, got %d", chartHits)
+	if hits := atomic.LoadInt32(&chartHits); hits != 1 {
+		t.Fatalf("expected exactly 1 chart request, got %d", hits)
 	}
 	if len(candles) != 2 {
 		t.Fatalf("expected 2 candles after look-ahead filter, got %d", len(candles))
@@ -241,7 +241,7 @@ func TestFetchAndStreamOHLCV_HTTP(t *testing.T) {
 		"2024-05-19,100.00,105.00,99.00,104.00,104.00,10000\n" +
 		"2024-05-21,102.00,107.00,101.00,106.00,106.00,12000\n"
 
-	sm, _ := newMockSessionManager(t)
+	sm := newMockSessionManager(t)
 	csvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("crumb") != mockCrumbValue {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -271,7 +271,7 @@ func TestFetchAndStreamOHLCV_HTTP(t *testing.T) {
 
 func TestFetchAndStreamOHLCV_HTTPUnauthorized(t *testing.T) {
 	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
-	sm, sessionServer := newMockSessionManager(t)
+	sm := newMockSessionManager(t)
 
 	var quoteHits int32
 	csvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +300,9 @@ func TestFetchAndStreamOHLCV_HTTPUnauthorized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected session refresh after invalidation: %v", err)
 	}
-	_ = sessionServer
+	if hits := atomic.LoadInt32(&quoteHits); hits != 1 {
+		t.Errorf("expected exactly 1 HTTP request, got %d", hits)
+	}
 }
 
 func TestFetchFundamentals_CacheHit(t *testing.T) {
@@ -338,7 +340,7 @@ func TestFetchFundamentals_OnlineQuoteSummary(t *testing.T) {
 	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
 	quoteJSON := loadTestFixture(t, "quote_summary_aapl.json")
 
-	sm, _ := newMockSessionManager(t)
+	sm := newMockSessionManager(t)
 	var quoteHits int32
 	client := testResilientClient(&mockTransport{
 		roundTrip: func(req *http.Request) (*http.Response, error) {
@@ -367,8 +369,8 @@ func TestFetchFundamentals_OnlineQuoteSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if atomic.LoadInt32(&quoteHits) != 1 {
-		t.Fatalf("expected 1 quoteSummary request, got %d", quoteHits)
+	if hits := atomic.LoadInt32(&quoteHits); hits != 1 {
+		t.Fatalf("expected 1 quoteSummary request, got %d", hits)
 	}
 	if !strings.Contains(out, "Apple Inc.") {
 		t.Errorf("expected company name in output: %s", out)
@@ -388,16 +390,16 @@ func TestFetchFundamentals_OnlineUnauthorizedRetry(t *testing.T) {
 	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
 	quoteJSON := loadTestFixture(t, "quote_summary_aapl.json")
 
-	sm, _ := newMockSessionManager(t)
-	attempts := 0
+	sm := newMockSessionManager(t)
+	var attempts int32
 	client := testResilientClient(&mockTransport{
 		roundTrip: func(req *http.Request) (*http.Response, error) {
 			if !strings.Contains(req.URL.Path, "/v10/finance/quoteSummary/") {
 				return nil, fmt.Errorf("unexpected request: %s", req.URL)
 			}
-			attempts++
+			atomic.AddInt32(&attempts, 1)
 			rec := httptest.NewRecorder()
-			if attempts == 1 {
+			if atomic.LoadInt32(&attempts) == 1 {
 				rec.WriteHeader(http.StatusUnauthorized)
 				return rec.Result(), nil
 			}
@@ -428,8 +430,8 @@ func TestFetchFundamentals_OnlineUnauthorizedRetry(t *testing.T) {
 	if !strings.Contains(out, "Apple Inc.") {
 		t.Errorf("expected fundamentals after retry, got: %s", out)
 	}
-	if attempts < 2 {
-		t.Errorf("expected at least 2 quoteSummary attempts, got %d", attempts)
+	if hits := atomic.LoadInt32(&attempts); hits < 2 {
+		t.Errorf("expected at least 2 quoteSummary attempts, got %d", hits)
 	}
 }
 
@@ -437,7 +439,7 @@ func TestFetchFundamentals_OnlineError(t *testing.T) {
 	cacheDir := t.TempDir()
 	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
 
-	sm, _ := newMockSessionManager(t)
+	sm := newMockSessionManager(t)
 	client := testResilientClient(&mockTransport{
 		roundTrip: func(req *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
