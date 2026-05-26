@@ -117,7 +117,7 @@ func NewSQLConnectionManager(dbPath string) (*SQLConnectionManager, error) {
 	readDSN := fmt.Sprintf("file:%s?_txlock=deferred&_journal_mode=WAL&_busy_timeout=5000&_sync=NORMAL", dbPath)
 	readDB, err := sql.Open("sqlite", readDSN)
 	if err != nil {
-		writeDB.Close()
+		_ = writeDB.Close()
 		return nil, fmt.Errorf("failed to open read sqlite db: %w", err)
 	}
 	readDB.SetMaxOpenConns(10) // Scale read queries concurrently
@@ -132,13 +132,13 @@ func NewSQLConnectionManager(dbPath string) (*SQLConnectionManager, error) {
 	}
 	for _, query := range pragmas {
 		if _, err := writeDB.Exec(query); err != nil {
-			writeDB.Close()
-			readDB.Close()
+			_ = writeDB.Close()
+			_ = readDB.Close()
 			return nil, fmt.Errorf("failed to apply SQLite pragma '%s': %w", query, err)
 		}
 		if _, err := readDB.Exec(query); err != nil {
-			writeDB.Close()
-			readDB.Close()
+			_ = writeDB.Close()
+			_ = readDB.Close()
 			return nil, fmt.Errorf("failed to apply SQLite pragma '%s' on reader: %w", query, err)
 		}
 	}
@@ -150,7 +150,7 @@ func NewSQLConnectionManager(dbPath string) (*SQLConnectionManager, error) {
 	}
 
 	if err := mgr.migrate(); err != nil {
-		mgr.Close()
+		_ = mgr.Close()
 		return nil, fmt.Errorf("database migration failed: %w", err)
 	}
 
@@ -230,10 +230,12 @@ func (c *StateCheckpointer) Save(ctx context.Context, state *TradingState) error
 	// 3. Compress using gzip
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	if _, err := zw.Write(finalJSON); err != nil {
-		return fmt.Errorf("failed to compress state data: %w", err)
+	if _, wErr := zw.Write(finalJSON); wErr != nil {
+		return fmt.Errorf("failed to compress state data: %w", wErr)
 	}
-	zw.Close()
+	if cErr := zw.Close(); cErr != nil {
+		return fmt.Errorf("failed to close gzip writer: %w", cErr)
+	}
 
 	id := fmt.Sprintf("%s:%s", state.Ticker, state.TradeDate)
 	query := `
@@ -272,7 +274,9 @@ func (c *StateCheckpointer) Load(ctx context.Context, ticker, tradeDate string) 
 	if err != nil {
 		return nil, -1, fmt.Errorf("failed to initialize decompression reader: %w", err)
 	}
-	defer zr.Close()
+	defer func() {
+		_ = zr.Close()
+	}()
 
 	var state TradingState
 	if err := json.NewDecoder(zr).Decode(&state); err != nil {

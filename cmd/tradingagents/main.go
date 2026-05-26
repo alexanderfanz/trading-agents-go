@@ -24,6 +24,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	// 1. Load base configurations from environment
 	cfg := config.LoadConfig()
 
@@ -51,7 +55,7 @@ func main() {
 	if *help {
 		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
 		flag.PrintDefaults()
-		return
+		return 0
 	}
 
 	// 3. Override configs with explicit Flags
@@ -130,14 +134,16 @@ func main() {
 
 
 	// 6. Ensure Parent Database Folders Exist
-	_ = os.MkdirAll(filepath.Dir(*dbPath), 0755)
+	_ = os.MkdirAll(filepath.Dir(*dbPath), 0750)
 
 	// 7. Initialize Concurrency-Safe SQLite WAL Connection Managers
 	dbMgr, err := checkpoint.NewSQLConnectionManager(*dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize SQLite checkpoint connection pool: %v", err)
 	}
-	defer dbMgr.Close()
+	defer func() {
+		_ = dbMgr.Close()
+	}()
 
 	checkpointer := checkpoint.NewStateCheckpointer(dbMgr)
 
@@ -178,7 +184,7 @@ func main() {
 			} else {
 				fmt.Println("[ERROR] Workflow execution was cancelled.")
 			}
-			os.Exit(130)
+			return 130
 		}
 
 		if cliController.IsTTY {
@@ -188,7 +194,7 @@ func main() {
 		} else {
 			fmt.Printf("[FATAL] Critical execution error: %v\n", err)
 		}
-		os.Exit(1)
+		return 1
 	}
 
 	// 14. Print final Obsidian Card summary
@@ -199,4 +205,5 @@ func main() {
 	} else {
 		fmt.Printf("[SUCCESS] Workflow complete for %s on %s. Final Decision:\n%s\n", strings.ToUpper(*ticker), *tradeDate, finalDecision)
 	}
+	return 0
 }

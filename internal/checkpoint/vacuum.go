@@ -53,12 +53,7 @@ func (w *CleanupWorker) Stop() {
 func (w *CleanupWorker) executePruneAndVacuum(ctx context.Context) {
 	// 1. Execute Cron deletion of expired checkpoint rows
 	pruneQuery := `DELETE FROM checkpoints WHERE updated_at < datetime('now', printf('-%d days', ?));`
-	res, err := w.mgr.writeDB.ExecContext(ctx, pruneQuery, w.retentionDays)
-	if err == nil {
-		if _, err := res.RowsAffected(); err == nil {
-			// Row deletion succeeded, logging is handled by system logger
-		}
-	}
+	_, _ = w.mgr.writeDB.ExecContext(ctx, pruneQuery, w.retentionDays)
 
 	// 2. Measure actual database size on disk
 	fi, err := os.Stat(w.mgr.dbPath)

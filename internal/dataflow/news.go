@@ -48,7 +48,9 @@ func (p *HTTPNewsSocialProvider) FetchNews(ctx context.Context, ticker string, s
 	if err != nil {
 		return fmt.Sprintf("<news unavailable: %v>", err), err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Sprintf("<news unavailable: status %d>", resp.StatusCode), fmt.Errorf("news responded with status %d", resp.StatusCode)
@@ -79,12 +81,12 @@ func (p *HTTPNewsSocialProvider) FetchNews(ctx context.Context, ticker string, s
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("### %s (source: %s)\n", item.Title, item.Publisher))
+		fmt.Fprintf(&sb, "### %s (source: %s)\n", item.Title, item.Publisher)
 		if item.Summary != "" {
-			sb.WriteString(fmt.Sprintf("%s\n", item.Summary))
+			fmt.Fprintf(&sb, "%s\n", item.Summary)
 		}
 		if item.Link != "" {
-			sb.WriteString(fmt.Sprintf("Link: %s\n", item.Link))
+			fmt.Fprintf(&sb, "Link: %s\n", item.Link)
 		}
 		sb.WriteString("\n")
 		filteredCount++
@@ -136,7 +138,7 @@ func (p *HTTPNewsSocialProvider) FetchGlobalNews(ctx context.Context, currDate t
 
 		var payload YahooSearchResponse
 		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if decodeErr != nil {
 			continue
@@ -179,12 +181,12 @@ func (p *HTTPNewsSocialProvider) FetchGlobalNews(ctx context.Context, currDate t
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("### %s (source: %s)\n", item.Title, item.Publisher))
+		fmt.Fprintf(&sb, "### %s (source: %s)\n", item.Title, item.Publisher)
 		if item.Summary != "" {
-			sb.WriteString(fmt.Sprintf("%s\n", item.Summary))
+			fmt.Fprintf(&sb, "%s\n", item.Summary)
 		}
 		if item.Link != "" {
-			sb.WriteString(fmt.Sprintf("Link: %s\n", item.Link))
+			fmt.Fprintf(&sb, "Link: %s\n", item.Link)
 		}
 		sb.WriteString("\n")
 	}

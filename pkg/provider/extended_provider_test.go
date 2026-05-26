@@ -157,10 +157,11 @@ func TestMiniMaxRoundTripper(t *testing.T) {
 				t.Fatalf("failed to create request: %v", err)
 			}
 
-			_, err = rt.RoundTrip(req)
+			resp, err := rt.RoundTrip(req)
 			if err != nil {
 				t.Fatalf("failed RoundTrip: %v", err)
 			}
+			resp.Body.Close()
 
 			var payload map[string]interface{}
 			err = json.Unmarshal(mock.requestBody, &payload)

@@ -10,6 +10,13 @@ import (
 	"testing"
 )
 
+const (
+	mockCookieName  = "A3"
+	mockCookieValue = "mock_cookie_val"
+	mockCookieFull  = "A3=mock_cookie_val"
+	mockCrumbValue  = "mock_crumb_val"
+)
+
 func TestYahooSessionManager_GetCredentials(t *testing.T) {
 	var fcHits int32
 	var crumbHits int32
@@ -21,22 +28,25 @@ func TestYahooSessionManager_GetCredentials(t *testing.T) {
 			atomic.AddInt32(&fcHits, 1)
 			// Return a cookie and a 404 status (just like Yahoo)
 			http.SetCookie(w, &http.Cookie{
-				Name:  "A3",
-				Value: "mock_cookie_val",
+				Name:     mockCookieName,
+				Value:    mockCookieValue,
+				Secure:   true,
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
 			})
 			w.WriteHeader(http.StatusNotFound)
 
 		case "/getcrumb":
 			atomic.AddInt32(&crumbHits, 1)
 			// Check for correct cookie
-			cookie, err := r.Cookie("A3")
-			if err != nil || cookie.Value != "mock_cookie_val" {
+			cookie, err := r.Cookie(mockCookieName)
+			if err != nil || cookie.Value != mockCookieValue {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("Unauthorized - missing or invalid cookie"))
+				_, _ = w.Write([]byte("Unauthorized - missing or invalid cookie"))
 				return
 			}
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("mock_crumb_val"))
+			_, _ = w.Write([]byte(mockCrumbValue))
 
 		default:
 			w.WriteHeader(http.StatusBadRequest)
@@ -57,12 +67,12 @@ func TestYahooSessionManager_GetCredentials(t *testing.T) {
 		t.Fatalf("Unexpected error fetching credentials: %v", err)
 	}
 
-	if cookie != "A3=mock_cookie_val" {
-		t.Errorf("Expected cookie 'A3=mock_cookie_val', got '%s'", cookie)
+	if cookie != mockCookieFull {
+		t.Errorf("Expected cookie '%s', got '%s'", mockCookieFull, cookie)
 	}
 
-	if crumb != "mock_crumb_val" {
-		t.Errorf("Expected crumb 'mock_crumb_val', got '%s'", crumb)
+	if crumb != mockCrumbValue {
+		t.Errorf("Expected crumb '%s', got '%s'", mockCrumbValue, crumb)
 	}
 
 	if atomic.LoadInt32(&fcHits) != 1 {
@@ -79,7 +89,7 @@ func TestYahooSessionManager_GetCredentials(t *testing.T) {
 		t.Fatalf("Unexpected error on second credentials call: %v", err)
 	}
 
-	if cookie2 != "A3=mock_cookie_val" || crumb2 != "mock_crumb_val" {
+	if cookie2 != mockCookieFull || crumb2 != mockCrumbValue {
 		t.Errorf("Cached credentials changed: got (%s, %s)", cookie2, crumb2)
 	}
 
@@ -104,14 +114,14 @@ func TestYahooSessionManager_GetCredentials(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, cr, err := sm.GetCredentials(ctx)
-			if err != nil {
+			c, cr, gErr := sm.GetCredentials(ctx)
+			if gErr != nil {
 				errOnce.Do(func() {
-					concurrentErr = err
+					concurrentErr = gErr
 				})
 				return
 			}
-			if c != "A3=mock_cookie_val" || cr != "mock_crumb_val" {
+			if c != mockCookieFull || cr != mockCrumbValue {
 				errOnce.Do(func() {
 					concurrentErr = fmt.Errorf("incorrect credentials returned: got (%s, %s)", c, cr)
 				})
@@ -140,7 +150,7 @@ func TestYahooSessionManager_GetCredentials(t *testing.T) {
 		t.Fatalf("Unexpected error fetching credentials after invalidation: %v", err)
 	}
 
-	if cookie3 != "A3=mock_cookie_val" || crumb3 != "mock_crumb_val" {
+	if cookie3 != mockCookieFull || crumb3 != mockCrumbValue {
 		t.Errorf("Credentials fetched after invalidation are incorrect: (%s, %s)", cookie3, crumb3)
 	}
 

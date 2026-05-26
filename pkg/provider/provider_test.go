@@ -192,6 +192,7 @@ func TestDebugLoggingRoundTripper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed roundtrip: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
