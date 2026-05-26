@@ -76,7 +76,16 @@ func TestExecutePruneAndVacuum_PrunesOldCheckpoints(t *testing.T) {
 		t.Fatalf("expected prune to delete old rows, before=%d after=%d", before, after)
 	}
 	if after != 1 {
-		t.Fatalf("expected one recent row to remain, got %d", after)
+		t.Fatalf("expected exactly one recent row to remain, got %d", after)
+	}
+
+	var remainingID string
+	err := mgr.readDB.QueryRowContext(ctx, "SELECT id FROM checkpoints LIMIT 1").Scan(&remainingID)
+	if err != nil {
+		t.Fatalf("failed to query remaining row: %v", err)
+	}
+	if remainingID != "NEW:MSFT" {
+		t.Errorf("expected remaining row to be 'NEW:MSFT', got %q", remainingID)
 	}
 }
 
