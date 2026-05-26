@@ -145,3 +145,64 @@ func TestGenerateLocalReportsEmpty(t *testing.T) {
 		t.Errorf("expected fallback content for empty field, got %q", content)
 	}
 }
+
+func TestGenerateLocalReportsSanitization(t *testing.T) {
+	// Test cases for path traversal sanitization and validation
+	tests := []struct {
+		name        string
+		ticker      string
+		expectError bool
+		checkPath   string // relative to tempDir, if success expected
+	}{
+		{
+			name:        "Path traversal ticker - safe resolution",
+			ticker:      "../../AAPL",
+			expectError: false,
+			checkPath:   "AAPL_20260525_154100",
+		},
+		{
+			name:        "Invalid ticker - dot",
+			ticker:      ".",
+			expectError: true,
+		},
+		{
+			name:        "Invalid ticker - dot dot",
+			ticker:      "..",
+			expectError: true,
+		},
+		{
+			name:        "Invalid ticker - separator",
+			ticker:      string(filepath.Separator),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			data := &ReportData{
+				Ticker:    tt.ticker,
+				TradeDate: "2026-05-25",
+				Timestamp: time.Date(2026, 5, 25, 15, 41, 0, 0, time.UTC),
+			}
+
+			err := GenerateLocalReports(data, tempDir)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error for ticker %q, but got nil", tt.ticker)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error for ticker %q: %v", tt.ticker, err)
+				}
+				if tt.checkPath != "" {
+					expectedFolder := filepath.Join(tempDir, tt.checkPath)
+					if _, err := os.Stat(expectedFolder); os.IsNotExist(err) {
+						t.Errorf("expected folder %s to exist, but it was not found", expectedFolder)
+					}
+				}
+			}
+		})
+	}
+}
+

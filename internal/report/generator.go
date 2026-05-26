@@ -32,8 +32,12 @@ func GenerateLocalReports(data *ReportData, baseDir string) error {
 		return fmt.Errorf("report data cannot be nil")
 	}
 	// Construct the root reports folder name: reports/<TICKER>_<YYYYMMDD_HHMMSS>
+	safeTicker := filepath.Base(filepath.Clean(data.Ticker))
+	if safeTicker == "." || safeTicker == ".." || safeTicker == string(filepath.Separator) {
+		return fmt.Errorf("invalid ticker name: %s", data.Ticker)
+	}
 	timestampStr := data.Timestamp.Format("20060102_150405")
-	folderName := fmt.Sprintf("%s_%s", data.Ticker, timestampStr)
+	folderName := fmt.Sprintf("%s_%s", safeTicker, timestampStr)
 	targetDir := filepath.Join(baseDir, folderName)
 
 	// Define subdirectories to create
