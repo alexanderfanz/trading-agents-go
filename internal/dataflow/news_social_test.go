@@ -108,7 +108,7 @@ var globalNewsHeaderRE = regexp.MustCompile(
 func parseGlobalNewsHeader(out string) (start, end string, ok bool) {
 	firstLine, _, found := strings.Cut(out, "\n")
 	if !found {
-		return "", "", false
+		firstLine = out
 	}
 	m := globalNewsHeaderRE.FindStringSubmatch(strings.TrimSpace(firstLine))
 	if m == nil {
@@ -694,9 +694,9 @@ func TestFetchRedditPartialFailureAndDefaults(t *testing.T) {
 	})
 
 	t.Run("nil subreddits uses default list", func(t *testing.T) {
-		var paths []string
+		pathsChan := make(chan string, 3)
 		provider := newTestNewsSocialProvider(func(req *http.Request) (*http.Response, error) {
-			paths = append(paths, req.URL.Path)
+			pathsChan <- req.URL.Path
 			return httpJSONResponse(http.StatusOK, `{"data":{"children":[]}}`), nil
 		})
 		provider.interRequestDelay = time.Millisecond
@@ -708,6 +708,11 @@ func TestFetchRedditPartialFailureAndDefaults(t *testing.T) {
 		want := "<no Reddit posts found mentioning AAPL across wallstreetbets, stocks, investing in the past 7 days>"
 		if out != want {
 			t.Errorf("nil subreddits aggregate message: got %q want %q", out, want)
+		}
+		close(pathsChan)
+		var paths []string
+		for p := range pathsChan {
+			paths = append(paths, p)
 		}
 		if len(paths) != 3 {
 			t.Errorf("expected 3 subreddit requests, got %d: %v", len(paths), paths)
