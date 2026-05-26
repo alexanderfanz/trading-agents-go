@@ -93,14 +93,14 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.MemoryLogMaxEntries != 0 {
 		t.Errorf("MemoryLogMaxEntries = %d, want 0", cfg.MemoryLogMaxEntries)
 	}
-	if cfg.LLMProvider != "openai" {
-		t.Errorf("LLMProvider = %q, want %q", cfg.LLMProvider, "openai")
+	if cfg.LLMProvider != "gemini" {
+		t.Errorf("LLMProvider = %q, want %q", cfg.LLMProvider, "gemini")
 	}
-	if cfg.DeepThinkLLM != "gpt-4o" {
-		t.Errorf("DeepThinkLLM = %q, want %q", cfg.DeepThinkLLM, "gpt-4o")
+	if cfg.DeepThinkLLM != "gemini-3.1-pro-preview" {
+		t.Errorf("DeepThinkLLM = %q, want %q", cfg.DeepThinkLLM, "gemini-3.1-pro-preview")
 	}
-	if cfg.QuickThinkLLM != "gpt-4o-mini" {
-		t.Errorf("QuickThinkLLM = %q, want %q", cfg.QuickThinkLLM, "gpt-4o-mini")
+	if cfg.QuickThinkLLM != "gemini-3.5-flash" {
+		t.Errorf("QuickThinkLLM = %q, want %q", cfg.QuickThinkLLM, "gemini-3.5-flash")
 	}
 	if cfg.BackendURL != "" {
 		t.Errorf("BackendURL = %q, want empty", cfg.BackendURL)
@@ -472,8 +472,8 @@ func TestLoadConfigUnknownEnvIgnored(t *testing.T) {
 
 	cfg := LoadConfig()
 
-	if cfg.LLMProvider != "openai" {
-		t.Errorf("LLMProvider = %q, want default openai", cfg.LLMProvider)
+	if cfg.LLMProvider != "gemini" {
+		t.Errorf("LLMProvider = %q, want default gemini", cfg.LLMProvider)
 	}
 	if cfg.ResultsDir != filepath.Join(defaultHome, "logs") {
 		t.Errorf("ResultsDir = %q, want default %q", cfg.ResultsDir, filepath.Join(defaultHome, "logs"))

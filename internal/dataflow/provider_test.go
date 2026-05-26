@@ -520,3 +520,80 @@ func TestParseCSVRowFastEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestFetchOHLCV_GlobFallback(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	fallbackFile := filepath.Join(cacheDir, "AAPL-YFin-data-2020-01-01-2026-05-26.csv")
+	csv := "Date,Open,High,Low,Close,Adj Close,Volume\n" +
+		tradeDate.Format("2006-01-02") + ",100.00,105.00,99.00,104.00,104.00,10000\n"
+	if err := os.WriteFile(fallbackFile, []byte(csv), 0600); err != nil {
+		t.Fatalf("write fallback cache: %v", err)
+	}
+
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/v8/finance/chart/") {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusInternalServerError)
+				return rec.Result(), nil
+			}
+			return nil, fmt.Errorf("unexpected URL: %s", req.URL.String())
+		},
+	})
+	reader := NewYahooFinanceCSVReader(client, cacheDir)
+
+	candles, err := reader.FetchOHLCV(context.Background(), "AAPL", tradeDate.AddDate(-1, 0, 0), tradeDate, tradeDate)
+	if err != nil {
+		t.Fatalf("FetchOHLCV glob fallback: %v", err)
+	}
+	if len(candles) != 1 {
+		t.Fatalf("expected 1 candle from glob fallback, got %d", len(candles))
+	}
+}
+
+func TestResilientClient503Retry(t *testing.T) {
+	attempts := 0
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts < 2 {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusServiceUnavailable)
+				return rec.Result(), nil
+			}
+			rec := httptest.NewRecorder()
+			rec.WriteHeader(http.StatusOK)
+			_, _ = rec.Write([]byte("ok"))
+			return rec.Result(), nil
+		},
+	})
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("expected retry success: %v", err)
+	}
+	_ = resp.Body.Close()
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
+	}
+}
+
+func TestResilientClientContextCancel(t *testing.T) {
+	// Zero-capacity bucket forces the rate-limit wait loop, which respects context cancellation.
+	client := NewResilientHTTPClient(http.DefaultClient, NewTokenBucket(0, 0), 0, time.Millisecond, time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com", nil)
+	resp, err := client.Do(req)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if !strings.Contains(err.Error(), "context canceled") {
+		t.Errorf("expected context canceled, got: %v", err)
+	}
+}

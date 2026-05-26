@@ -88,14 +88,23 @@ func TestMainHelp(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(stdout, "TradingAgents Go Orchestrator - Usage Guide") {
-		t.Errorf("expected usage guide in output, got: %s", stdout)
+	if !strings.Contains(stdout, "+-------------------------------------+") {
+		t.Errorf("expected framed usage header in output, got: %s", stdout)
 	}
-	if !strings.Contains(stdout, "Version:") {
+	if !strings.Contains(stdout, "| TradingAgents Go Orchestrator       |") {
+		t.Errorf("expected title in framed header, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "| Usage Guide                         |") {
+		t.Errorf("expected usage guide in framed header, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Version:    ") {
 		t.Errorf("expected version in output, got: %s", stdout)
 	}
 	if !strings.Contains(stdout, "Build date:") {
 		t.Errorf("expected build date in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Options:\n") {
+		t.Errorf("expected options heading in output, got: %s", stdout)
 	}
 	if !strings.Contains(stdout, "-ticker") {
 		t.Errorf("expected flag defaults in stdout, got: %s", stdout)
@@ -117,6 +126,22 @@ func TestMainInvalidFlag(t *testing.T) {
 		t.Errorf("expected invalid flag error in stderr, got: %s", stderr)
 	}
 	_ = stdout
+}
+
+func TestMainInteractiveRequiresTTY(t *testing.T) {
+	stdout, stderr := captureOutput(func() {
+		code := run([]string{"-interactive"})
+		if code != 1 {
+			t.Errorf("expected exit code 1 for non-TTY interactive mode, got %d", code)
+		}
+	})
+
+	if !strings.Contains(stderr, "interactive mode cancelled") {
+		t.Errorf("expected interactive cancellation in stderr, got: %s", stderr)
+	}
+	if !strings.Contains(stdout, "| Interactive Setup") {
+		t.Errorf("expected interactive setup header in stdout, got: %s", stdout)
+	}
 }
 
 func TestMainWorkflow(t *testing.T) {
@@ -283,6 +308,9 @@ Free Cash Flow: 100000.00
 		}
 	})
 
+	if !strings.Contains(stdout, "| Analysis Run") {
+		t.Errorf("expected analysis run header in stdout, got: %s", stdout)
+	}
 	if !strings.Contains(strings.ToLower(stdout), "workflow complete for aapl") {
 		t.Errorf("expected workflow completion summary in stdout, got: %s", stdout)
 	}
