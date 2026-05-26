@@ -61,6 +61,8 @@ func TestPromptForRunOptionsRequiresTTY(t *testing.T) {
 
 func TestNewFormValuesUsesDefaults(t *testing.T) {
 	cfg := config.LoadConfig()
+	cfg.MaxDebateRounds = 2
+	cfg.MaxRiskDiscussRounds = 2
 	defaults := app.RunOptions{
 		Ticker:    "spy",
 		TradeDate: "2026-01-02",
@@ -80,6 +82,9 @@ func TestNewFormValuesUsesDefaults(t *testing.T) {
 	}
 	if values.dbPath != filepath.Join("tmp", "checkpoints.db") {
 		t.Fatalf("expected db path from defaults, got %s", values.dbPath)
+	}
+	if values.researchDepth != 3 {
+		t.Fatalf("expected research depth to map to selectable option 3, got %d", values.researchDepth)
 	}
 }
 
@@ -139,6 +144,24 @@ func TestApplyModelDefaultsForProvider(t *testing.T) {
 			t.Fatalf("expected unknown provider to keep existing models, got %s/%s", values.quickThinkLLM, values.deepThinkLLM)
 		}
 	})
+}
+
+func TestDefaultModelsForProviderHandlesEmptyCatalogs(t *testing.T) {
+	const providerEmptyCatalog = "empty-catalog"
+	oldCatalog, hadOldCatalog := modelCatalogByProvider[providerEmptyCatalog]
+	modelCatalogByProvider[providerEmptyCatalog] = providerModelCatalog{}
+	t.Cleanup(func() {
+		if hadOldCatalog {
+			modelCatalogByProvider[providerEmptyCatalog] = oldCatalog
+			return
+		}
+		delete(modelCatalogByProvider, providerEmptyCatalog)
+	})
+
+	defaults := defaultModelsForProvider(providerEmptyCatalog)
+	if defaults.quick != "" || defaults.deep != "" {
+		t.Fatalf("expected empty catalog to return empty defaults, got %s/%s", defaults.quick, defaults.deep)
+	}
 }
 
 func TestApplyModelDefaultsForProviderPreservesConfiguredModelsWhenProviderUnchanged(t *testing.T) {
@@ -252,6 +275,27 @@ func TestValidateLocalReportsDir(t *testing.T) {
 	}
 	if err := values.validateLocalReportsDir(" "); err == nil {
 		t.Fatal("expected empty local reports dir to fail when reports enabled")
+	}
+}
+
+func TestSelectableResearchDepth(t *testing.T) {
+	tests := []struct {
+		depth int
+		want  int
+	}{
+		{depth: 0, want: 1},
+		{depth: 1, want: 1},
+		{depth: 2, want: 3},
+		{depth: 3, want: 3},
+		{depth: 4, want: 5},
+		{depth: 5, want: 5},
+		{depth: 10, want: 5},
+	}
+
+	for _, tc := range tests {
+		if got := selectableResearchDepth(tc.depth); got != tc.want {
+			t.Fatalf("expected depth %d to map to %d, got %d", tc.depth, tc.want, got)
+		}
 	}
 }
 

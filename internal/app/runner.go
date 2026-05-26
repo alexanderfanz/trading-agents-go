@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,13 +44,18 @@ func Run(cfg *config.Config, opts RunOptions, cliController *cli.CLIController) 
 		fmt.Printf("[INFO] Starting AI Trading Agent workflow for %s on %s\n", ticker, opts.TradeDate)
 	}
 
-	llmProvider := initializeLLMProvider(cfg, ticker, cliController)
+	llmProvider, err := initializeLLMProvider(cfg, ticker, cliController)
+	if err != nil {
+		printFatal(cliController, "Failed to initialize LLM provider", err)
+		return 1
+	}
 
 	_ = os.MkdirAll(filepath.Dir(opts.DBPath), 0750)
 
 	dbMgr, err := checkpoint.NewSQLConnectionManager(opts.DBPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize SQLite checkpoint connection pool: %v", err)
+		printFatal(cliController, "Failed to initialize SQLite checkpoint connection pool", err)
+		return 1
 	}
 	defer func() {
 		_ = dbMgr.Close()
@@ -113,10 +117,10 @@ func Run(cfg *config.Config, opts RunOptions, cliController *cli.CLIController) 
 	return 0
 }
 
-func initializeLLMProvider(cfg *config.Config, ticker string, cliController *cli.CLIController) provider.LLMProvider {
+func initializeLLMProvider(cfg *config.Config, ticker string, cliController *cli.CLIController) (provider.LLMProvider, error) {
 	llmProvider, initErr := provider.NewLLMProvider(cfg.LLMProvider, cfg.DeepThinkLLM, cfg.BackendURL, cfg.ResultsDir)
 	if initErr == nil {
-		return llmProvider
+		return llmProvider, nil
 	}
 
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
@@ -127,21 +131,21 @@ func initializeLLMProvider(cfg *config.Config, ticker string, cliController *cli
 				"💡 Auto-detected OPENAI_API_KEY in environment. Using OpenAI Provider.",
 			))
 		}
-		return llmProvider
+		return llmProvider, nil
 	}
 
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
 		cfg.LLMProvider = "gemini"
 		llmProvider, initErr = provider.NewGeminiAdapter(key, cfg.DeepThinkLLM, cfg.ResultsDir)
 		if initErr != nil {
-			log.Fatalf("Error auto-configuring Gemini adapter: %v", initErr)
+			return nil, fmt.Errorf("error auto-configuring Gemini adapter: %w", initErr)
 		}
 		if cliController.IsTTY {
 			fmt.Println(cli.GetDynamicBorderStyle(cli.StateSystemAction, cliController.Theme).Render(
 				"💡 Auto-detected GEMINI_API_KEY in environment. Using Gemini Provider.",
 			))
 		}
-		return llmProvider
+		return llmProvider, nil
 	}
 
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
@@ -152,7 +156,7 @@ func initializeLLMProvider(cfg *config.Config, ticker string, cliController *cli
 				"💡 Auto-detected ANTHROPIC_API_KEY in environment. Using Anthropic Provider.",
 			))
 		}
-		return llmProvider
+		return llmProvider, nil
 	}
 
 	cfg.LLMProvider = "mock"
@@ -166,5 +170,16 @@ func initializeLLMProvider(cfg *config.Config, ticker string, cliController *cli
 		fmt.Println("[WARN] No API keys found in environment. Defaulting to dry-run MOCK LLM simulation mode.")
 	}
 
-	return llmProvider
+	return llmProvider, nil
+}
+
+func printFatal(cliController *cli.CLIController, label string, err error) {
+	if cliController.IsTTY {
+		fmt.Println("\n" + cli.GetDynamicBorderStyle(cli.StateBearish, cliController.Theme).Render(
+			fmt.Sprintf("❌ %s: %v", label, err),
+		))
+		return
+	}
+
+	fmt.Printf("[FATAL] %s: %v\n", label, err)
 }

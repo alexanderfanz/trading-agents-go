@@ -83,7 +83,7 @@ func newFormValues(cfg *config.Config, defaults app.RunOptions) *formValues {
 		provider:           provider,
 		quickThinkLLM:      cfg.QuickThinkLLM,
 		deepThinkLLM:       cfg.DeepThinkLLM,
-		researchDepth:      max(cfg.MaxDebateRounds, cfg.MaxRiskDiscussRounds),
+		researchDepth:      selectableResearchDepth(max(cfg.MaxDebateRounds, cfg.MaxRiskDiscussRounds)),
 		checkpointEnabled:  cfg.CheckpointEnabled,
 		createLocalReports: cfg.CreateLocalReports,
 		localReportsDir:    cfg.LocalReportsDir,
@@ -447,7 +447,15 @@ func defaultModelsForProvider(provider string) modelDefaults {
 	if !ok {
 		return modelDefaults{}
 	}
-	return modelDefaults{quick: catalog.quick[0], deep: catalog.deep[0]}
+
+	defaults := modelDefaults{}
+	if len(catalog.quick) > 0 {
+		defaults.quick = catalog.quick[0]
+	}
+	if len(catalog.deep) > 0 {
+		defaults.deep = catalog.deep[0]
+	}
+	return defaults
 }
 
 func modelOptionsForProvider(provider string, category modelCategory) []huh.Option[string] {
@@ -543,6 +551,17 @@ func parsePositiveInt(value, label string) (int, error) {
 		return 0, fmt.Errorf("%s must be greater than zero", label)
 	}
 	return parsed, nil
+}
+
+func selectableResearchDepth(depth int) int {
+	switch {
+	case depth <= 1:
+		return 1
+	case depth <= 3:
+		return 3
+	default:
+		return 5
+	}
 }
 
 func defaultString(value, fallback string) string {

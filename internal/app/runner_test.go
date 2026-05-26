@@ -14,7 +14,10 @@ func TestInitializeLLMProviderUsesConfiguredMock(t *testing.T) {
 	cfg.LLMProvider = "mock"
 	cfg.DeepThinkLLM = "mock-model"
 
-	got := initializeLLMProvider(cfg, "AAPL", testCLIController(false))
+	got, err := initializeLLMProvider(cfg, "AAPL", testCLIController(false))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if got == nil {
 		t.Fatal("expected mock provider")
 	}
@@ -29,7 +32,10 @@ func TestInitializeLLMProviderFallsBackToMockWithoutKeys(t *testing.T) {
 	cfg := config.LoadConfig()
 	cfg.LLMProvider = "unsupported"
 
-	got := initializeLLMProvider(cfg, "MSFT", testCLIController(false))
+	got, err := initializeLLMProvider(cfg, "MSFT", testCLIController(false))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if got == nil {
 		t.Fatal("expected fallback provider")
 	}
@@ -59,7 +65,10 @@ func TestInitializeLLMProviderAutoDetectsAPIKeys(t *testing.T) {
 			cfg.LLMProvider = "unsupported"
 			cfg.DeepThinkLLM = tc.model
 
-			got := initializeLLMProvider(cfg, "AAPL", testCLIController(false))
+			got, err := initializeLLMProvider(cfg, "AAPL", testCLIController(false))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if got == nil {
 				t.Fatal("expected auto-detected provider")
 			}
