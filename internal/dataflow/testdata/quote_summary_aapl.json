@@ -1,0 +1,46 @@
+{
+  "quoteSummary": {
+    "result": [
+      {
+        "assetProfile": {
+          "sector": "Technology",
+          "industry": "Consumer Electronics"
+        },
+        "price": {
+          "longName": "Apple Inc."
+        },
+        "financialData": {
+          "totalRevenue": {"raw": 380000000000},
+          "grossProfits": {"raw": 160000000000},
+          "ebitda": {"raw": 120000000000},
+          "netIncomeToCommon": {"raw": 95000000000},
+          "profitMargins": {"raw": 0.25},
+          "operatingMargins": {"raw": 0.30},
+          "returnOnEquity": {"raw": 1.50},
+          "returnOnAssets": {"raw": 0.20},
+          "debtToEquity": {"raw": 1.40},
+          "currentRatio": {"raw": 1.20},
+          "freeCashflow": {"raw": 100000000000}
+        },
+        "defaultKeyStatistics": {
+          "forwardPE": {"raw": 28.0},
+          "pegRatio": {"raw": 1.50},
+          "priceToBook": {"raw": 40.0},
+          "trailingEps": {"raw": 6.0},
+          "forwardEps": {"raw": 6.50},
+          "bookValue": {"raw": 4.50}
+        },
+        "summaryDetail": {
+          "marketCap": {"raw": 3000000000000},
+          "trailingPE": {"raw": 30.0},
+          "dividendYield": {"raw": 0.005},
+          "beta": {"raw": 1.20},
+          "fiftyTwoWeekHigh": {"raw": 198.0},
+          "fiftyTwoWeekLow": {"raw": 165.0},
+          "fiftyDayAverage": {"raw": 180.0},
+          "twoHundredDayAverage": {"raw": 175.0}
+        }
+      }
+    ]
+  }
+}
