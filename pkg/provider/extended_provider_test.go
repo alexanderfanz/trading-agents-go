@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 )
@@ -51,12 +50,7 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 	}
 
 	for k, v := range envs {
-		if err := os.Setenv(k, v); err != nil {
-			t.Fatalf("failed to set env %s: %v", k, err)
-		}
-		defer func(key string) {
-			_ = os.Unsetenv(key)
-		}(k)
+		t.Setenv(k, v)
 	}
 
 	providers := []struct {
@@ -95,7 +89,7 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 }
 
 func TestOllama_BaseURLOverride(t *testing.T) {
-	_ = os.Unsetenv("OLLAMA_BASE_URL")
+	t.Setenv("OLLAMA_BASE_URL", "")
 	p, err := NewLLMProvider(providerOllama, "qwen3:latest", "", "")
 	if err != nil {
 		t.Fatalf("failed to create Ollama: %v", err)
@@ -109,12 +103,7 @@ func TestOllama_BaseURLOverride(t *testing.T) {
 		t.Fatal("expected ollama to be non-nil")
 	}
 
-	if setErr := os.Setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1"); setErr != nil {
-		t.Fatalf("failed to set env: %v", setErr)
-	}
-	defer func() {
-		_ = os.Unsetenv("OLLAMA_BASE_URL")
-	}()
+	t.Setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1")
 	p2, err := NewLLMProvider(providerOllama, "qwen3:latest", "", "")
 	if err != nil {
 		t.Fatalf("failed to create overridden Ollama: %v", err)

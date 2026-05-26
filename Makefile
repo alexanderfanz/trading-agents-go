@@ -26,9 +26,9 @@ test:
 test-race:
 	go test -race -v ./...
 
-# Run unit tests with coverage profile
+# Run unit tests with coverage profile (matches CI)
 coverage:
-	go test -coverprofile=coverage.out -covermode=atomic ./...
+	go test -race -coverprofile=coverage.out -covermode=atomic -v ./...
 
 # Open html report in browser
 coverage-html: coverage
