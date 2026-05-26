@@ -25,7 +25,16 @@ var (
 	tickerPattern = regexp.MustCompile(`^[A-Za-z0-9._\-\^]{1,32}$`)
 )
 
-const providerMock = "mock"
+const (
+	providerGemini  = "gemini"
+	providerQwen    = "qwen"
+	providerGLM     = "glm"
+	providerMinimax = "minimax"
+	providerMock    = "mock"
+
+	modelGPT55  = "gpt-5.5"
+	modelO4Mini = "o4-mini"
+)
 
 // PromptForRunOptions collects manual run settings and applies config overlays.
 func PromptForRunOptions(cfg *config.Config, defaults app.RunOptions) (app.RunOptions, error) {
@@ -113,13 +122,17 @@ func runForm(values *formValues) error {
 
 	return huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Quick-thinking model").
+				Description(modelSelectDescription(values.provider, "quick")).
 				Value(&values.quickThinkLLM).
+				Options(modelOptionsForProvider(values.provider, modelCategoryQuick)...).
 				Validate(validateRequired("quick-thinking model")),
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Deep-thinking model").
+				Description(modelSelectDescription(values.provider, "deep")).
 				Value(&values.deepThinkLLM).
+				Options(modelOptionsForProvider(values.provider, modelCategoryDeep)...).
 				Validate(validateRequired("deep-thinking model")),
 			huh.NewSelect[int]().
 				Title("Research depth").
@@ -211,18 +224,18 @@ func (v *formValues) applyTo(cfg *config.Config) (app.RunOptions, error) {
 
 func providerOptions() []huh.Option[string] {
 	providers := []string{
+		providerGemini,
 		"openai",
-		"gemini",
 		"google",
 		"anthropic",
 		"azure",
 		"xai",
 		"deepseek",
-		"qwen",
+		providerQwen,
 		"qwen-cn",
-		"glm",
+		providerGLM,
 		"glm-cn",
-		"minimax",
+		providerMinimax,
 		"minimax-cn",
 		"openrouter",
 		"ollama",
@@ -241,35 +254,229 @@ type modelDefaults struct {
 	deep  string
 }
 
+type modelCategory string
+
+const (
+	modelCategoryQuick modelCategory = "quick"
+	modelCategoryDeep  modelCategory = "deep"
+)
+
+type providerModelCatalog struct {
+	quick []string
+	deep  []string
+}
+
+var modelCatalogByProvider = map[string]providerModelCatalog{
+	"openai": {
+		quick: []string{
+			"gpt-5.4-nano",
+			"gpt-5.4-mini",
+			modelO4Mini,
+			"gpt-5",
+			modelGPT55,
+		},
+		deep: []string{
+			modelGPT55,
+			"gpt-5.5-pro",
+			"gpt-5.4",
+			"gpt-5.4-pro",
+			"o3",
+			modelO4Mini,
+		},
+	},
+	providerGemini: {
+		quick: []string{
+			"gemini-3.5-flash",
+			"gemini-3-flash-preview",
+			"gemini-3.1-flash-lite",
+			"gemini-2.5-flash",
+		},
+		deep: []string{
+			"gemini-3.1-pro-preview",
+			"gemini-3.1-pro-preview-customtools",
+			"gemini-3.5-flash",
+			"gemini-2.5-pro",
+		},
+	},
+	"anthropic": {
+		quick: []string{
+			"claude-sonnet-4-6",
+			"claude-haiku-4-5",
+			"claude-sonnet-4-5",
+			"claude-opus-4-6",
+		},
+		deep: []string{
+			"claude-opus-4-7",
+			"claude-opus-4-6",
+			"claude-sonnet-4-6",
+			"claude-sonnet-4-5",
+		},
+	},
+	"azure": {
+		quick: []string{
+			"gpt-5.4-nano",
+			"gpt-5.4-mini",
+			modelO4Mini,
+			"gpt-5",
+			modelGPT55,
+		},
+		deep: []string{
+			modelGPT55,
+			"gpt-5.5-pro",
+			"gpt-5.4",
+			"gpt-5.4-pro",
+			"o3",
+			modelO4Mini,
+		},
+	},
+	"xai": {
+		quick: []string{
+			"grok-4.1-fast",
+			"grok-4-fast",
+			"grok-4-mini",
+		},
+		deep: []string{
+			"grok-4.20",
+			"grok-4",
+			"grok-4-heavy",
+		},
+	},
+	"deepseek": {
+		quick: []string{
+			"deepseek-v4-flash",
+			"deepseek-v4",
+			"deepseek-chat",
+		},
+		deep: []string{
+			"deepseek-v4-pro",
+			"deepseek-reasoner",
+			"deepseek-r1",
+		},
+	},
+	providerQwen: {
+		quick: []string{
+			"qwen3.6-flash",
+			"qwen3.6-30b-a3b",
+			"qwen3.5-turbo",
+		},
+		deep: []string{
+			"qwen3.7-max",
+			"qwen3.6-max-preview",
+			"qwen3-max-thinking",
+			"qwen3.6-235b-a22b",
+		},
+	},
+	providerGLM: {
+		quick: []string{
+			"glm-5.1-highspeed",
+			"glm-5.1-air",
+			"glm-5.1-flash",
+		},
+		deep: []string{
+			"glm-5.1",
+			"glm-5.1-plus",
+			"glm-5",
+		},
+	},
+	providerMinimax: {
+		quick: []string{
+			"MiniMax-M2.7-highspeed",
+			"MiniMax-M2.5",
+			"MiniMax-Text-01",
+		},
+		deep: []string{
+			"MiniMax-M2.7",
+			"MiniMax-M2.5-Pro",
+			"MiniMax-01",
+		},
+	},
+	"openrouter": {
+		quick: []string{
+			"google/gemini-3.5-flash",
+			"openai/gpt-5.4-nano",
+			"anthropic/claude-sonnet-4.6",
+			"deepseek/deepseek-v4-flash",
+			"qwen/qwen3.6-flash",
+			"x-ai/grok-4.1-fast",
+		},
+		deep: []string{
+			"anthropic/claude-opus-4.7",
+			"openai/gpt-5.5",
+			"google/gemini-3.1-pro",
+			"deepseek/deepseek-v4-pro",
+			"qwen/qwen3.7-max",
+			"z-ai/glm-5.1",
+		},
+	},
+	"ollama": {
+		quick: []string{
+			"qwen3:4b",
+			"gemma3:4b",
+			"llama3.2:3b",
+			"phi4-mini",
+		},
+		deep: []string{
+			"qwen3:32b",
+			"deepseek-r1:32b",
+			"gemma3:27b",
+			"llama4:scout",
+		},
+	},
+	providerMock: {
+		quick: []string{providerMock},
+		deep:  []string{providerMock},
+	},
+}
+
 func defaultModelsForProvider(provider string) modelDefaults {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai":
-		return modelDefaults{quick: "gpt-4o-mini", deep: "gpt-4o"}
-	case "gemini", "google":
-		return modelDefaults{quick: "gemini-3.5-flash", deep: "gemini-3.5-flash"}
-	case "anthropic":
-		return modelDefaults{quick: "claude-3-7-sonnet", deep: "claude-3-7-sonnet"}
-	case "azure":
-		return modelDefaults{quick: "gpt-4", deep: "gpt-4"}
-	case "xai":
-		return modelDefaults{quick: "grok-4.20-reasoner", deep: "grok-4.20-reasoner"}
-	case "deepseek":
-		return modelDefaults{quick: "deepseek-reasoner", deep: "deepseek-reasoner"}
-	case "qwen", "qwen-cn":
-		return modelDefaults{quick: "qwen3.6-plus", deep: "qwen3.6-plus"}
-	case "glm", "glm-cn":
-		return modelDefaults{quick: "glm-5", deep: "glm-5"}
-	case "minimax", "minimax-cn":
-		return modelDefaults{quick: "MiniMax-M2.7", deep: "MiniMax-M2.7"}
-	case "openrouter":
-		return modelDefaults{quick: "meta-llama/llama-3", deep: "meta-llama/llama-3"}
-	case "ollama":
-		return modelDefaults{quick: "qwen3:latest", deep: "qwen3:latest"}
-	case providerMock:
-		return modelDefaults{quick: providerMock, deep: providerMock}
-	default:
+	catalog, ok := modelCatalogForProvider(provider)
+	if !ok {
 		return modelDefaults{}
 	}
+	return modelDefaults{quick: catalog.quick[0], deep: catalog.deep[0]}
+}
+
+func modelOptionsForProvider(provider string, category modelCategory) []huh.Option[string] {
+	catalog, ok := modelCatalogForProvider(provider)
+	if !ok {
+		return nil
+	}
+
+	var models []string
+	switch category {
+	case modelCategoryQuick:
+		models = catalog.quick
+	case modelCategoryDeep:
+		models = catalog.deep
+	default:
+		return nil
+	}
+
+	options := make([]huh.Option[string], 0, len(models))
+	for _, model := range models {
+		options = append(options, huh.NewOption(model, model))
+	}
+	return options
+}
+
+func modelCatalogForProvider(provider string) (providerModelCatalog, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	switch normalized {
+	case "google":
+		normalized = providerGemini
+	case "qwen-cn":
+		normalized = providerQwen
+	case "glm-cn":
+		normalized = providerGLM
+	case "minimax-cn":
+		normalized = providerMinimax
+	}
+	catalog, ok := modelCatalogByProvider[normalized]
+	return catalog, ok
+}
+
+func modelSelectDescription(provider, category string) string {
+	return fmt.Sprintf("Curated %s choices for %s as of May 2026. Use CLI/env vars for custom model IDs.", category, strings.ToLower(strings.TrimSpace(provider)))
 }
 
 func validateTicker(value string) error {

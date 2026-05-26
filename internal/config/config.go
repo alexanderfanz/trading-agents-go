@@ -54,9 +54,9 @@ func LoadConfig() *Config {
 		DataCacheDir:           filepath.Join(home, "cache"),
 		MemoryLogPath:          filepath.Join(home, "memory", "trading_memory.md"),
 		MemoryLogMaxEntries:    0, // 0 means unlimited
-		LLMProvider:            "openai",
-		DeepThinkLLM:           "gpt-4o", // Upgraded to standard models for 2026 stability
-		QuickThinkLLM:          "gpt-4o-mini",
+		LLMProvider:            "gemini",
+		DeepThinkLLM:           "gemini-3.1-pro-preview", // Upgraded to standard models for 2026 stability
+		QuickThinkLLM:          "gemini-3.5-flash",
 		BackendURL:             "",
 		GoogleThinkingLevel:    "",
 		OpenAIReasoningEffort:  "",

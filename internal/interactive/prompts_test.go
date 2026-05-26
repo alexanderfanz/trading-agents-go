@@ -86,21 +86,21 @@ func TestApplyModelDefaultsForProvider(t *testing.T) {
 		quick    string
 		deep     string
 	}{
-		{provider: "openai", quick: "gpt-4o-mini", deep: "gpt-4o"},
-		{provider: "gemini", quick: "gemini-3.5-flash", deep: "gemini-3.5-flash"},
-		{provider: "google", quick: "gemini-3.5-flash", deep: "gemini-3.5-flash"},
-		{provider: "anthropic", quick: "claude-3-7-sonnet", deep: "claude-3-7-sonnet"},
-		{provider: "azure", quick: "gpt-4", deep: "gpt-4"},
-		{provider: "xai", quick: "grok-4.20-reasoner", deep: "grok-4.20-reasoner"},
-		{provider: "deepseek", quick: "deepseek-reasoner", deep: "deepseek-reasoner"},
-		{provider: "qwen", quick: "qwen3.6-plus", deep: "qwen3.6-plus"},
-		{provider: "qwen-cn", quick: "qwen3.6-plus", deep: "qwen3.6-plus"},
-		{provider: "glm", quick: "glm-5", deep: "glm-5"},
-		{provider: "glm-cn", quick: "glm-5", deep: "glm-5"},
-		{provider: "minimax", quick: "MiniMax-M2.7", deep: "MiniMax-M2.7"},
-		{provider: "minimax-cn", quick: "MiniMax-M2.7", deep: "MiniMax-M2.7"},
-		{provider: "openrouter", quick: "meta-llama/llama-3", deep: "meta-llama/llama-3"},
-		{provider: "ollama", quick: "qwen3:latest", deep: "qwen3:latest"},
+		{provider: "openai", quick: "gpt-5.4-nano", deep: "gpt-5.5"},
+		{provider: "gemini", quick: "gemini-3.5-flash", deep: "gemini-3.1-pro-preview"},
+		{provider: "google", quick: "gemini-3.5-flash", deep: "gemini-3.1-pro-preview"},
+		{provider: "anthropic", quick: "claude-sonnet-4-6", deep: "claude-opus-4-7"},
+		{provider: "azure", quick: "gpt-5.4-nano", deep: "gpt-5.5"},
+		{provider: "xai", quick: "grok-4.1-fast", deep: "grok-4.20"},
+		{provider: "deepseek", quick: "deepseek-v4-flash", deep: "deepseek-v4-pro"},
+		{provider: "qwen", quick: "qwen3.6-flash", deep: "qwen3.7-max"},
+		{provider: "qwen-cn", quick: "qwen3.6-flash", deep: "qwen3.7-max"},
+		{provider: "glm", quick: "glm-5.1-highspeed", deep: "glm-5.1"},
+		{provider: "glm-cn", quick: "glm-5.1-highspeed", deep: "glm-5.1"},
+		{provider: "minimax", quick: "MiniMax-M2.7-highspeed", deep: "MiniMax-M2.7"},
+		{provider: "minimax-cn", quick: "MiniMax-M2.7-highspeed", deep: "MiniMax-M2.7"},
+		{provider: "openrouter", quick: "google/gemini-3.5-flash", deep: "anthropic/claude-opus-4.7"},
+		{provider: "ollama", quick: "qwen3:4b", deep: "qwen3:32b"},
 		{provider: providerMock, quick: providerMock, deep: providerMock},
 	}
 
@@ -136,6 +136,35 @@ func TestApplyModelDefaultsForProvider(t *testing.T) {
 			t.Fatalf("expected unknown provider to keep existing models, got %s/%s", values.quickThinkLLM, values.deepThinkLLM)
 		}
 	})
+}
+
+func TestModelOptionsForProvider(t *testing.T) {
+	for _, providerOption := range providerOptions() {
+		quickOptions := modelOptionsForProvider(providerOption.Value, modelCategoryQuick)
+		deepOptions := modelOptionsForProvider(providerOption.Value, modelCategoryDeep)
+
+		if providerOption.Value == providerMock {
+			if len(quickOptions) != 1 || len(deepOptions) != 1 {
+				t.Fatalf("expected mock provider to have one quick and deep model, got %d/%d", len(quickOptions), len(deepOptions))
+			}
+			continue
+		}
+
+		if len(quickOptions) < 3 || len(quickOptions) > 6 {
+			t.Fatalf("expected %s quick options to have 3-6 models, got %d", providerOption.Value, len(quickOptions))
+		}
+		if len(deepOptions) < 3 || len(deepOptions) > 6 {
+			t.Fatalf("expected %s deep options to have 3-6 models, got %d", providerOption.Value, len(deepOptions))
+		}
+
+		defaults := defaultModelsForProvider(providerOption.Value)
+		if quickOptions[0].Value != defaults.quick {
+			t.Fatalf("expected %s first quick option to match default %s, got %s", providerOption.Value, defaults.quick, quickOptions[0].Value)
+		}
+		if deepOptions[0].Value != defaults.deep {
+			t.Fatalf("expected %s first deep option to match default %s, got %s", providerOption.Value, defaults.deep, deepOptions[0].Value)
+		}
+	}
 }
 
 func TestApplyToRejectsInvalidValues(t *testing.T) {
