@@ -119,6 +119,22 @@ func TestMainInvalidFlag(t *testing.T) {
 	_ = stdout
 }
 
+func TestMainInteractiveRequiresTTY(t *testing.T) {
+	stdout, stderr := captureOutput(func() {
+		code := run([]string{"-interactive"})
+		if code != 1 {
+			t.Errorf("expected exit code 1 for non-TTY interactive mode, got %d", code)
+		}
+	})
+
+	if !strings.Contains(stderr, "interactive mode cancelled") {
+		t.Errorf("expected interactive cancellation in stderr, got: %s", stderr)
+	}
+	if stdout != "" {
+		t.Errorf("expected no stdout for rejected interactive mode, got: %s", stdout)
+	}
+}
+
 func TestMainWorkflow(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "tradingagents-test")
 	if err != nil {

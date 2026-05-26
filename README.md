@@ -178,6 +178,19 @@ go build -o tradingagents cmd/tradingagents/main.go
 | `-results-dir` | `string` | Directory to write API logs and diagnostic tokens | `~/.tradingagentsgo/logs` |
 | `-memory-path` | `string` | Cumulative decision-log journal output file | `~/.tradingagentsgo/memory/trading_memory.md` |
 | `-timeout` | `int` | Master execution timeout boundary in seconds | `300` |
+| `-interactive` | `bool` | Launch guided interactive mode for manual runs | `false` |
+
+### Interactive Mode
+
+For manual exploration, launch the guided prompt flow:
+
+```bash
+./tradingagents -interactive
+```
+
+Interactive mode asks for the ticker, analysis date, output language, provider, quick/deep models, research depth, checkpointing, report settings, and advanced paths before running the same orchestrator used by the flag-driven CLI. It only runs in a real terminal; redirected output, scripts, and CI should continue using explicit flags.
+
+The no-argument command keeps its existing behavior for now. Future work will add a structured progress event interface and a separate opt-in TUI dashboard for richer live status.
 
 ### Environment Variable Overrides
 
