@@ -145,6 +145,18 @@ For convenience, you can download a pre-compiled binary directly from the GitHub
    ./tradingagents -ticker AAPL -provider mock
    ```
 
+#### Temporary macOS Gatekeeper Workaround
+macOS may block the downloaded release binary with an "Apple could not verify" warning because release binaries are not signed and notarized yet. This is a temporary workaround until [issue #23](https://github.com/alexanderfanz/trading-agents-go/issues/23) is resolved.
+
+To allow the binary from Finder, Control-click the extracted `tradingagents` binary, choose **Open**, then confirm that you want to open it.
+
+If you prefer the terminal, remove the quarantine attribute from the extracted binary before running it:
+
+```bash
+xattr -d com.apple.quarantine ./tradingagents
+./tradingagents -ticker AAPL -provider mock
+```
+
 ### Building From Source
 If you prefer to build the binary manually:
 
