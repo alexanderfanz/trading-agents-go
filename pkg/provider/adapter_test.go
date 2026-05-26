@@ -97,7 +97,7 @@ func TestAdapters_GenerateAndStructured(t *testing.T) {
 		w.WriteHeader(404)
 		_, _ = w.Write([]byte(`{"error": "not found"}`))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	// Set required mock API keys in environment so NewLLMProvider constructs properly
 	envs := map[string]string{
