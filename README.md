@@ -48,9 +48,11 @@ flowchart TD
     
     %% Phase D
     Checkpoint2 --> PhaseD["Phase D: Risk & Position Sizing"]
-    subgraph MultiTurnDebate2["Risk Sizing Loop"]
+    subgraph MultiTurnDebate2["Derivatives-Aware Risk Loop"]
         direction TB
-        RiskAgent["Risk Analyst (Assess Drawdown)"] <--> PMAgent["Portfolio Manager (Propose Sizing)"]
+        Trader["Trader (Propose Entry/Exit Price)"] --> OptionsStrategist["Options Strategist (Formulate CSPs/Covered Calls)"]
+        OptionsStrategist --> RiskDebate["Risk Debate (Aggressive/Conservative/Neutral)"]
+        RiskDebate <--> PMAgent["Portfolio Manager (Propose Sizing)"]
     end
     PhaseD --> MultiTurnDebate2
     MultiTurnDebate2 --> Decision["Produce Final Position Rating & Sizing Thesis"]
@@ -72,7 +74,7 @@ flowchart TD
 * **SQLite WAL Checkpoint Resumption**: Prevents data loss and limits redundant LLM API consumption by persisting intermediate pipeline states into a single-writer, multi-reader SQLite connection pool running in Write-Ahead Logging (WAL) mode. Ensures database integrity using SHA-256 checksums.
 * **Background Size-Pruning & Vacuum Scheduler**: Runs a concurrency-safe cleanup routine to monitor disk footprints, prunes old historical records, and executes SQLite vacuums according to custom retention windows.
 * **Resilient Rate-Limiting Client**: Embeds a token-bucket rate limiter combined with a custom HTTP round-tripper featuring randomized exponential backoff and full jitter. Perfect for handling heavy external API interactions safely.
-* **Multi-Agent Consensual Debate Loops**: Orchestrates multi-turn reasoning debates between Bull/Bear agents and Risk/Portfolio Managers, generating refined structured trading strategies.
+* **Multi-Agent Consensual Debate Loops**: Orchestrates multi-turn reasoning debates between Bull/Bear agents and a derivatives-aware risk team (Trader, Options Strategist, Risk Analysts, and Portfolio Manager), generating refined structured trading strategies.
 * **Obsidian Obsidian-Slate Styled CLI**: Provides vibrant, color-coded terminal interfaces using custom Lipgloss HSL layouts for interactive TTY sessions.
 * **Smart Piping Redirection Downscaler**: Automatically checks if standard out is a TTY and strips away terminal ANSI escape codes, outputting clean, highly readable raw logs.
 * **Seamless Dry-Run Mock Mode**: Automatically falls back to a simulated turn-based mock debate engine if no API keys are detected in the terminal environment, facilitating out-of-the-box local testing.

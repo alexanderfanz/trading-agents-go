@@ -20,6 +20,7 @@ type ReportData struct {
 	BearDebate             string
 	ResearchPlan           string
 	TraderProposal         string
+	OptionsStrategy        string
 	AggressiveRisk         string
 	ConservativeRisk       string
 	NeutralRisk            string
@@ -93,6 +94,9 @@ func GenerateLocalReports(data *ReportData, baseDir string) error {
 	}
 
 	if err := writeFile("3_trading", "trader.md", data.TraderProposal); err != nil {
+		return err
+	}
+	if err := writeFile("3_trading", "options.md", data.OptionsStrategy); err != nil {
 		return err
 	}
 
@@ -172,6 +176,9 @@ func assembleCompleteReport(data *ReportData) string {
 ## 3. Trading Proposal
 %s
 
+### Options Execution Strategy
+%s
+
 ---
 
 ## 4. Risk Assessment & Sizing Debate
@@ -202,6 +209,7 @@ func assembleCompleteReport(data *ReportData) string {
 		fallback(data.BearDebate),
 		fallback(data.ResearchPlan),
 		fallback(data.TraderProposal),
+		fallback(data.OptionsStrategy),
 		fallback(data.AggressiveRisk),
 		fallback(data.ConservativeRisk),
 		fallback(data.NeutralRisk),
