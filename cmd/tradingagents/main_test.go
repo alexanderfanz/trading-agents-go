@@ -25,34 +25,56 @@ func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 func captureOutput(f func()) (string, string) {
 	oldStdout := os.Stdout
 	oldStderr := os.Stderr
+
+	rOut, wOut, errOut := os.Pipe()
+	if errOut != nil {
+		panic(errOut)
+	}
+	rErr, wErr, errErr := os.Pipe()
+	if errErr != nil {
+		_ = rOut.Close()
+		_ = wOut.Close()
+		panic(errErr)
+	}
+
+	// Always restore and close everything in deferred blocks to prevent leaks on panics
 	defer func() {
 		os.Stdout = oldStdout
 		os.Stderr = oldStderr
 	}()
 
-	rOut, wOut, _ := os.Pipe()
-	rErr, wErr, _ := os.Pipe()
-
 	os.Stdout = wOut
 	os.Stderr = wErr
 
-	outChan := make(chan string)
-	errChan := make(chan string)
+	outChan := make(chan string, 1)
+	errChan := make(chan string, 1)
 
+	// Background readers
 	go func() {
+		defer close(outChan)
+		defer func() { _ = rOut.Close() }()
 		var buf bytes.Buffer
 		_, _ = io.Copy(&buf, rOut)
 		outChan <- buf.String()
 	}()
 
 	go func() {
+		defer close(errChan)
+		defer func() { _ = rErr.Close() }()
 		var buf bytes.Buffer
 		_, _ = io.Copy(&buf, rErr)
 		errChan <- buf.String()
 	}()
 
+	// Run the function and guarantee the writer ends are closed so background readers reach EOF
+	defer func() {
+		_ = wOut.Close()
+		_ = wErr.Close()
+	}()
+
 	f()
 
+	// Explicitly close writers here to trigger EOF for background readers so we can read from channels
 	_ = wOut.Close()
 	_ = wErr.Close()
 
