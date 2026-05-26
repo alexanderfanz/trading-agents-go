@@ -124,10 +124,31 @@ flowchart TD
 
 ## 🛠️ Build and Installation
 
-### Prerequisites
+### Pre-compiled Release Binaries (No Build Required)
+For convenience, you can download a pre-compiled binary directly from the GitHub Releases page without building it from source. We provide automated builds for macOS, Linux, and Windows across `amd64` and `arm64` architectures.
+
+1. Navigate to the [Releases](https://github.com/alexanderfanz/trading-agents-go/releases) page.
+2. Download the compressed archive matching your operating system and CPU architecture (e.g., `tradingagents_Darwin_arm64.tar.gz` for an Apple Silicon Mac, or `tradingagents_Linux_amd64.tar.gz` for a 64-bit Linux server).
+3. Extract the downloaded archive:
+   ```bash
+   # For macOS and Linux (.tar.gz)
+   tar -xzf tradingagents_*.tar.gz
+
+   # For Windows (.zip)
+   unzip tradingagents_*.zip
+   ```
+4. Run the extracted binary directly:
+   ```bash
+   ./tradingagents -ticker AAPL -provider mock
+   ```
+
+### Building From Source
+If you prefer to build the binary manually:
+
+#### Prerequisites
 - **Go**: Version `1.26` or higher.
 
-### Compilation
+#### Compilation
 Compile the binary into a highly optimized, portable executable in your current directory:
 ```bash
 go build -o tradingagents cmd/tradingagents/main.go
@@ -196,9 +217,9 @@ export OPENAI_API_KEY="sk-..."
 
 Alternatively, easily switch to other supported models:
 ```bash
-# Execute using Google Gemini
+# Execute using Google Gemini (e.g. Gemini 3.5 Flash)
 export GEMINI_API_KEY="AIzaSy..."
-./tradingagents -ticker TSLA -provider gemini -deep-think-llm "gemini-2.5-pro"
+./tradingagents -ticker DELL -provider gemini -deep-think-llm "gemini-3.5-flash" -quick-think-llm "gemini-3.5-flash"
 
 # Execute using Anthropic Claude
 export ANTHROPIC_API_KEY="sk-ant-..."
