@@ -1,0 +1,19 @@
+name: Dummy CI for Docs
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '*.md'
+
+jobs:
+  lint:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Skipping for docs change"
+
+  test:
+    name: Run Unit Tests with Race Detector
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Skipping for docs change"
