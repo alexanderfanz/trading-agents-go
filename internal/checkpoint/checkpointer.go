@@ -63,6 +63,7 @@ type TradingState struct {
 	InvestmentPlan          string            `json:"investment_plan" gob:"investment_plan"`
 	AnalystReports          map[string]string `json:"analyst_reports" gob:"analyst_reports"`
 	TraderInvestmentPlan    string            `json:"trader_investment_plan" gob:"trader_investment_plan"`
+	OptionsStrategy         string            `json:"options_strategy" gob:"options_strategy"`
 	RiskDebate              RiskDebateState   `json:"risk_debate" gob:"risk_debate"`
 	FinalTradeDecision      string            `json:"final_trade_decision" gob:"final_trade_decision"`
 	BullDebateHistory       []string          `json:"bull_debate_history" gob:"bull_debate_history"`

@@ -123,6 +123,14 @@ const (
 	
 	TraderInstruction = "You are the Trader. Convert the investment plan and analyst reports into a concrete transaction proposal. Specify stop-loss, entry targets, and position sizing guidelines in JSON format matching the TraderProposal schema."
 	
+	OptionsStrategistInstruction = "You are the Head Options Strategist and Execution Manager. The fundamental and technical analysts have established a directional bias and identified key support/resistance levels and implied volatility parameters.\n\n" +
+		"CRITICAL INSTRUCTIONS:\n" +
+		"1. **Beyond Vanilla Equity**: Do not limit your execution plan to simply buying or selling the underlying stock at a limit or market price.\n" +
+		"2. **Options for Entry**: If the consensus is to BUY at a lower support level, suggest yield-generating entry strategies. For example, evaluate selling Cash-Secured Puts (CSPs) at the target support strike. Calculate the premium collected and the adjusted cost basis.\n" +
+		"3. **Options for Exit/Yield**: If the consensus is to hold the asset, evaluate selling Covered Calls at the identified resistance levels to capture theta decay and reduce the cost basis.\n" +
+		"4. **Hedging High Beta**: If the asset has a high Beta or downside risk is elevated, suggest protective put spreads or collars to cap the downside risk.\n" +
+		"5. **Format**: Present your strategy in a clear table: Strategy Type | Strike Price | Expiration Target | Estimated Premium | Adjusted Break-Even." + InstitutionalToneInstruction
+	
 	AggressiveRiskInstruction = "You are the Aggressive Risk analyst. Critique the transaction proposal. Suggest higher sizing if trends support it; look for opportunities to maximize gains." + InstitutionalToneInstruction
 	
 	ConservativeRiskInstruction = "You are the Conservative Risk analyst. Critique the transaction proposal from a defensive standpoint. Recommend capital preservation, tighter stop-losses, and reduced size." + InstitutionalToneInstruction
@@ -286,6 +294,7 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 			BearDebate:         strings.Join(state.BearDebateHistory, "\n\n---\n\n"),
 			ResearchPlan:       state.InvestmentPlan,
 			TraderProposal:     state.TraderInvestmentPlan,
+			OptionsStrategy:    state.OptionsStrategy,
 			AggressiveRisk:     strings.Join(state.AggressiveRiskHistory, "\n\n---\n\n"),
 			ConservativeRisk:   strings.Join(state.ConservativeRiskHistory, "\n\n---\n\n"),
 			NeutralRisk:        strings.Join(state.NeutralRiskHistory, "\n\n---\n\n"),
@@ -688,6 +697,7 @@ Debate History:
 // RunRiskAndSizing executes the sizing and risk management debate.
 func (o *TradingOrchestrator) RunRiskAndSizing(ctx context.Context, state *checkpoint.TradingState) (string, cli.CLIState, error) {
 	traderAgent := o.createAgent("Trader", "Trader", TraderInstruction)
+	optionsAgent := o.createAgent("Options Strategist", "Options Strategist", OptionsStrategistInstruction)
 	aggRiskAgent := o.createAgent("Aggressive Risk", "Aggressive Risk", AggressiveRiskInstruction)
 	conRiskAgent := o.createAgent("Conservative Risk", "Conservative Risk", ConservativeRiskInstruction)
 	neuRiskAgent := o.createAgent("Neutral Risk", "Neutral Risk", NeutralRiskInstruction)
@@ -716,9 +726,30 @@ Fundamentals: %s`, state.Ticker, planText, market, fundamentals)
 
 	renderedProposal := RenderTraderProposal(proposal)
 
+	optionsPrompt := fmt.Sprintf(`Review the research plan, trader proposal, and analyst reports for %s to formulate an optimized options execution strategy.
+
+Research Plan:
+%s
+
+Trader Proposal:
+%s
+
+Market Report:
+%s
+
+Fundamentals:
+%s`, state.Ticker, planText, renderedProposal, market, fundamentals)
+
+	optionsStrategy, err := optionsAgent.Call(ctx, optionsPrompt)
+	if err != nil {
+		fmt.Printf("[WARNING] Options strategist agent call failed: %v\n", err)
+		optionsStrategy = "Fallback options strategy due to execution failure."
+	}
+
 	state.Lock()
 	state.TraderInvestmentPlan = renderedProposal
-	state.RiskDebate.History = "### Starting Risk Debate Room\nTrader Proposal:\n" + renderedProposal + "\n"
+	state.OptionsStrategy = optionsStrategy
+	state.RiskDebate.History = "### Starting Risk Debate Room\nTrader Proposal:\n" + renderedProposal + "\n\nOptions Execution Strategy:\n" + optionsStrategy + "\n"
 	state.Unlock()
 
 	for i := 0; i < o.cfg.MaxRiskDiscussRounds; i++ {
