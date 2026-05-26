@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
@@ -113,8 +112,7 @@ func TestAdapters_GenerateAndStructured(t *testing.T) {
 		"OPENROUTER_API_KEY":   "mock-openrouter-key",
 	}
 	for k, v := range envs {
-		_ = os.Setenv(k, v)
-		defer func(key string) { _ = os.Unsetenv(key) }(k)
+		t.Setenv(k, v)
 	}
 
 	// 3. Test OpenAIAdapter directly (using custom base URL constructor)
@@ -144,8 +142,7 @@ func TestAdapters_GenerateAndStructured(t *testing.T) {
 
 	// 4. Test AnthropicAdapter (by setting ANTHROPIC_BASE_URL env var)
 	t.Run("AnthropicAdapter", func(t *testing.T) {
-		_ = os.Setenv("ANTHROPIC_BASE_URL", server.URL)
-		defer func() { _ = os.Unsetenv("ANTHROPIC_BASE_URL") }()
+		t.Setenv("ANTHROPIC_BASE_URL", server.URL)
 
 		adapter := NewAnthropicAdapter("mock-key", "claude-3-7-sonnet", "")
 		ctx := context.Background()
@@ -237,9 +234,13 @@ func TestGeminiAdapter_GenerateAndStructured(t *testing.T) {
 			w := httptest.NewRecorder()
 			w.Header().Set("Content-Type", "application/json")
 
-			bodyBytes, err := io.ReadAll(req.Body)
-			if err != nil {
-				return nil, err
+			var bodyBytes []byte
+			if req.Body != nil {
+				var err error
+				bodyBytes, err = io.ReadAll(req.Body)
+				if err != nil {
+					return nil, err
+				}
 			}
 			bodyStr := string(bodyBytes)
 

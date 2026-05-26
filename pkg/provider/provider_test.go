@@ -206,16 +206,23 @@ func TestDebugLoggingRoundTripper(t *testing.T) {
 		t.Errorf("expected %s, got %s", mockRespBody, string(body))
 	}
 
-	// Give the async logging a moment to write to the file
-	time.Sleep(100 * time.Millisecond)
+	// Poll until the log file is written or timeout occurs
+	var files []os.DirEntry
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		files, err = os.ReadDir(tempDir)
+		if err == nil && len(files) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
-	files, err := os.ReadDir(tempDir)
 	if err != nil {
 		t.Fatalf("failed to read logging dir: %v", err)
 	}
 
 	if len(files) == 0 {
-		t.Fatalf("expected log file to be written")
+		t.Fatalf("expected log file to be written within timeout")
 	}
 
 	// Read and verify log payload
@@ -246,13 +253,7 @@ func TestNewLLMProvider_Errors(t *testing.T) {
 	}
 
 	// Test missing API key for OpenAI
-	origKey := os.Getenv("OPENAI_API_KEY")
-	_ = os.Unsetenv("OPENAI_API_KEY")
-	defer func() {
-		if origKey != "" {
-			_ = os.Setenv("OPENAI_API_KEY", origKey)
-		}
-	}()
+	t.Setenv("OPENAI_API_KEY", "")
 
 	_, err = NewLLMProvider("openai", "gpt-4o", "", "")
 	if err == nil {
@@ -335,15 +336,22 @@ func TestDebugLoggingRoundTripper_GeminiTokenMetrics(t *testing.T) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Wait for async logging
-	time.Sleep(100 * time.Millisecond)
+	// Poll until the log file is written or timeout occurs
+	var files []os.DirEntry
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		files, err = os.ReadDir(tempDir)
+		if err == nil && len(files) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
-	files, err := os.ReadDir(tempDir)
 	if err != nil {
 		t.Fatalf("failed to read logging dir: %v", err)
 	}
 	if len(files) == 0 {
-		t.Fatalf("expected log file to be written")
+		t.Fatalf("expected log file to be written within timeout")
 	}
 
 	logFilePath := filepath.Clean(filepath.Join(tempDir, files[0].Name()))
