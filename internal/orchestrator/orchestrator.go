@@ -742,6 +742,7 @@ Fundamentals:
 
 	optionsStrategy, err := optionsAgent.Call(ctx, optionsPrompt)
 	if err != nil {
+		fmt.Printf("[WARNING] Options strategist agent call failed: %v\n", err)
 		optionsStrategy = "Fallback options strategy due to execution failure."
 	}
 
