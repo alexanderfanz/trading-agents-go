@@ -94,7 +94,7 @@ func (r *YahooFinanceCSVReader) FetchOHLCV(ctx context.Context, ticker string, s
 
 	var dataFile string
 	if r.cacheDir != "" {
-		_ = os.MkdirAll(r.cacheDir, 0755)
+		_ = os.MkdirAll(r.cacheDir, 0750)
 		dataFile = filepath.Join(r.cacheDir, fmt.Sprintf("%s-YFin-data-%s-%s.csv", safeTicker, startStr, endStr))
 	}
 
@@ -142,7 +142,9 @@ func (r *YahooFinanceCSVReader) fetchOnlineAndCacheChart(ctx context.Context, ur
 	if err != nil {
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("server responded with status %d", resp.StatusCode)
@@ -280,18 +282,21 @@ func (r *YahooFinanceCSVReader) FetchAndStreamOHLCV(ctx context.Context, pathOrU
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, fmt.Errorf("server responded with status %d", resp.StatusCode)
 		}
 		input = resp.Body
 	} else {
+		// #nosec G304 - cache path is sanitized and verified locally
 		file, err := os.Open(pathOrURL)
 		if err != nil {
 			return nil, err
 		}
 		input = file
 	}
-	defer input.Close()
+	defer func() {
+		_ = input.Close()
+	}()
 
 	candles := make([]Candle, 0, 512)
 	reader := bufio.NewReaderSize(input, 64*1024)
@@ -482,6 +487,7 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 	var cacheFile string
 	if r.cacheDir != "" {
 		cacheFile = filepath.Join(r.cacheDir, fmt.Sprintf("%s-fundamentals.txt", safeTicker))
+		// #nosec G304 - cache file name is safely constructed from ticker
 		if data, err := os.ReadFile(cacheFile); err == nil {
 			return string(data), nil
 		}
@@ -515,7 +521,9 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 	if err != nil {
 		return "", fmt.Errorf("failed fetching fundamentals: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
 		r.sessionMgr.Invalidate()
@@ -592,7 +600,7 @@ func (r *YahooFinanceCSVReader) FetchFundamentals(ctx context.Context, ticker st
 
 	// Write cache
 	if cacheFile != "" {
-		_ = os.WriteFile(cacheFile, []byte(resultStr), 0644)
+		_ = os.WriteFile(cacheFile, []byte(resultStr), 0600)
 	}
 
 	return resultStr, nil

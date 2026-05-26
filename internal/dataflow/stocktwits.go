@@ -46,7 +46,9 @@ func (p *HTTPNewsSocialProvider) FetchStockTwits(ctx context.Context, ticker str
 	if err != nil {
 		return fmt.Sprintf("<stocktwits unavailable: %v>", err), err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Sprintf("<stocktwits unavailable: status %d>", resp.StatusCode), fmt.Errorf("stocktwits responded with status %d", resp.StatusCode)
@@ -111,8 +113,8 @@ func (p *HTTPNewsSocialProvider) FetchStockTwits(ctx context.Context, ticker str
 		bearPct = int(float64(bearish*100)/float64(total) + 0.5)
 	}
 
-	sb.WriteString(fmt.Sprintf("Bullish: %d (%d%%) · Bearish: %d (%d%%) · Unlabeled: %d · Total: %d most-recent messages\n\n",
-		bullish, bullPct, bearish, bearPct, unlabeled, total))
+	fmt.Fprintf(&sb, "Bullish: %d (%d%%) · Bearish: %d (%d%%) · Unlabeled: %d · Total: %d most-recent messages\n\n",
+		bullish, bullPct, bearish, bearPct, unlabeled, total)
 	sb.WriteString(strings.Join(lines, "\n"))
 
 	return sb.String(), nil

@@ -74,7 +74,7 @@ type DebugLoggingRoundTripper struct {
 
 // NewDebugLoggingRoundTripper creates a logging interceptor and prepares the debug subdirectory.
 func NewDebugLoggingRoundTripper(proxied http.RoundTripper, debugDir string) (*DebugLoggingRoundTripper, error) {
-	if err := os.MkdirAll(debugDir, 0755); err != nil {
+	if err := os.MkdirAll(debugDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create logging directory: %w", err)
 	}
 	if proxied == nil {
@@ -160,12 +160,13 @@ func (l *DebugLoggingRoundTripper) logTransaction(
 
 	provider := "unknown"
 	urlStr := req.URL.String()
-	if req.URL.Host == "api.openai.com" {
-		provider = "openai"
-	} else if req.URL.Host == "generativelanguage.googleapis.com" {
-		provider = "gemini"
-	} else if req.URL.Host == "api.anthropic.com" {
-		provider = "anthropic"
+	switch req.URL.Host {
+	case "api.openai.com":
+		provider = providerOpenAI
+	case "generativelanguage.googleapis.com":
+		provider = providerGemini
+	case "api.anthropic.com":
+		provider = providerAnthropic
 	}
 
 	tokens := l.extractTokenMetrics(provider, respBody)
@@ -195,7 +196,7 @@ func (l *DebugLoggingRoundTripper) logTransaction(
 	filename := fmt.Sprintf("%s_%d_%08x.json", provider, time.Now().UnixMilli(), uuid)
 	filePath := filepath.Join(l.DebugDir, filename)
 
-	_ = os.WriteFile(filePath, logBytes, 0644)
+	_ = os.WriteFile(filePath, logBytes, 0600)
 }
 
 func (l *DebugLoggingRoundTripper) extractTokenMetrics(provider string, body []byte) *TokenUsage {
@@ -209,7 +210,7 @@ func (l *DebugLoggingRoundTripper) extractTokenMetrics(provider string, body []b
 	}
 
 	switch provider {
-	case "openai":
+	case providerOpenAI:
 		if usage, ok := raw["usage"].(map[string]interface{}); ok {
 			prompt, _ := usage["prompt_tokens"].(float64)
 			completion, _ := usage["completion_tokens"].(float64)
@@ -220,7 +221,7 @@ func (l *DebugLoggingRoundTripper) extractTokenMetrics(provider string, body []b
 				TotalTokens:      int(total),
 			}
 		}
-	case "gemini":
+	case providerGemini:
 		if usage, ok := raw["usageMetadata"].(map[string]interface{}); ok {
 			prompt, _ := usage["promptTokenCount"].(float64)
 			completion, _ := usage["candidatesTokenCount"].(float64)

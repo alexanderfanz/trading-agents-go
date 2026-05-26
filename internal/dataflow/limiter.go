@@ -75,6 +75,7 @@ func NewResilientHTTPClient(client *http.Client, limiter *TokenBucket, maxRetrie
 		maxRetries:  maxRetries,
 		baseBackoff: base,
 		maxBackoff:  max,
+		// #nosec G404 - weak random is perfectly fine for network retry jitter
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
@@ -83,10 +84,7 @@ func NewResilientHTTPClient(client *http.Client, limiter *TokenBucket, maxRetrie
 func (c *ResilientHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		// Acquire rate limiter permission
-		for {
-			if c.limiter.Allow() {
-				break
-			}
+		for !c.limiter.Allow() {
 			// Active wait block
 			select {
 			case <-req.Context().Done():
@@ -106,7 +104,7 @@ func (c *ResilientHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Handle server throttling or service drops
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
-			resp.Body.Close() // Immediately close body to conserve connections
+			_ = resp.Body.Close() // Immediately close body to conserve connections
 			if attempt == c.maxRetries {
 				return nil, fmt.Errorf("rate limits exceeded after %d retries: status %d", c.maxRetries, resp.StatusCode)
 			}

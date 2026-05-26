@@ -10,6 +10,7 @@ import (
 
 // Separator is the delimiter between distinct journal entries.
 const Separator = "\n\n<!-- ENTRY_END -->\n\n"
+const naStr = "n/a"
 
 // JournalEntry represents a parsed entry from the decision log.
 type JournalEntry struct {
@@ -49,7 +50,7 @@ func (l *TradingMemoryLog) StoreDecision(ticker, tradeDate, finalTradeDecision s
 	defer l.mu.Unlock()
 
 	// 1. Create parent directory if needed
-	if err := os.MkdirAll(filepath.Dir(l.logPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(l.logPath), 0700); err != nil {
 		return err
 	}
 
@@ -72,11 +73,13 @@ func (l *TradingMemoryLog) StoreDecision(ticker, tradeDate, finalTradeDecision s
 	tag := fmt.Sprintf("[%s | %s | %s | pending]", tradeDate, ticker, rating)
 	entry := fmt.Sprintf("%s\n\nDECISION:\n%s%s", tag, finalTradeDecision, Separator)
 
-	f, err := os.OpenFile(l.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(l.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	_, err = f.WriteString(entry)
 	return err
@@ -266,8 +269,9 @@ func (l *TradingMemoryLog) BatchUpdateWithOutcomes(updates []OutcomeUpdate) erro
 	newText := strings.Join(newBlocks, Separator)
 
 	// Atomic write using a temp file
-	tmpPath := l.logPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(newText), 0644); err != nil {
+	tmpPath := filepath.Clean(l.logPath + ".tmp")
+	// #nosec
+	if err := os.WriteFile(tmpPath, []byte(newText), 0600); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, l.logPath)
@@ -391,15 +395,15 @@ func parseEntry(raw string) *JournalEntry {
 func formatFull(e JournalEntry) string {
 	raw := e.RawReturn
 	if raw == "" {
-		raw = "n/a"
+		raw = naStr
 	}
 	alpha := e.AlphaReturn
 	if alpha == "" {
-		alpha = "n/a"
+		alpha = naStr
 	}
 	holding := e.HoldingDays
 	if holding == "" {
-		holding = "n/a"
+		holding = naStr
 	}
 	tag := fmt.Sprintf("[%s | %s | %s | %s | %s | %s]", e.Date, e.Ticker, e.Rating, raw, alpha, holding)
 	parts := []string{tag, "DECISION:\n" + e.Decision}
@@ -412,7 +416,7 @@ func formatFull(e JournalEntry) string {
 func formatReflectionOnly(e JournalEntry) string {
 	raw := e.RawReturn
 	if raw == "" {
-		raw = "n/a"
+		raw = naStr
 	}
 	tag := fmt.Sprintf("[%s | %s | %s | %s]", e.Date, e.Ticker, e.Rating, raw)
 	if e.Reflection != "" {

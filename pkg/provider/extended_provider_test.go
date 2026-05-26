@@ -37,7 +37,7 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 	envs := map[string]string{
 		"OPENAI_API_KEY":       "mock-openai",
 		"ANTHROPIC_API_KEY":    "mock-anthropic",
-		"GEMINI_API_KEY":       "mock-gemini",
+		geminiEnv:              "mock-gemini",
 		"AZURE_OPENAI_API_KEY": "mock-azure",
 		"XAI_API_KEY":          "mock-xai",
 		"DEEPSEEK_API_KEY":     "mock-deepseek",
@@ -51,29 +51,33 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 	}
 
 	for k, v := range envs {
-		os.Setenv(k, v)
-		defer os.Unsetenv(k)
+		if err := os.Setenv(k, v); err != nil {
+			t.Fatalf("failed to set env %s: %v", k, err)
+		}
+		defer func(key string) {
+			_ = os.Unsetenv(key)
+		}(k)
 	}
 
 	providers := []struct {
 		name  string
 		model string
 	}{
-		{"openai", "gpt-4o"},
-		{"anthropic", "claude-3-7-sonnet"},
-		{"google", "gemini-2.5-flash"},
-		{"gemini", "gemini-2.5-flash"},
-		{"ollama", "qwen3:latest"},
-		{"deepseek", "deepseek-reasoner"},
-		{"qwen", "qwen3.6-plus"},
-		{"qwen-cn", "qwen3.6-plus"},
-		{"glm", "glm-5"},
-		{"glm-cn", "glm-5"},
-		{"minimax", "MiniMax-M2.7"},
-		{"minimax-cn", "MiniMax-M2.7"},
-		{"xai", "grok-4.20-reasoner"},
-		{"openrouter", "meta-llama/llama-3"},
-		{"azure", "gpt-4"},
+		{providerOpenAI, "gpt-4o"},
+		{providerAnthropic, "claude-3-7-sonnet"},
+		{providerGoogle, "gemini-2.5-flash"},
+		{providerGemini, "gemini-2.5-flash"},
+		{providerOllama, "qwen3:latest"},
+		{providerDeepSeek, "deepseek-reasoner"},
+		{providerQwen, "qwen3.6-plus"},
+		{providerQwenCN, "qwen3.6-plus"},
+		{providerGLM, "glm-5"},
+		{providerGLMCN, "glm-5"},
+		{providerMinimax, "MiniMax-M2.7"},
+		{providerMinimaxCN, "MiniMax-M2.7"},
+		{providerXAI, "grok-4.20-reasoner"},
+		{providerOpenRouter, "meta-llama/llama-3"},
+		{providerAzure, "gpt-4"},
 		{"mock", "mock-model"},
 	}
 
@@ -91,9 +95,8 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 }
 
 func TestOllama_BaseURLOverride(t *testing.T) {
-	// 1. Default Ollama Base URL
-	os.Unsetenv("OLLAMA_BASE_URL")
-	p, err := NewLLMProvider("ollama", "qwen3:latest", "", "")
+	_ = os.Unsetenv("OLLAMA_BASE_URL")
+	p, err := NewLLMProvider(providerOllama, "qwen3:latest", "", "")
 	if err != nil {
 		t.Fatalf("failed to create Ollama: %v", err)
 	}
@@ -106,10 +109,13 @@ func TestOllama_BaseURLOverride(t *testing.T) {
 		t.Fatal("expected ollama to be non-nil")
 	}
 
-	// 2. Env Override
-	os.Setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1")
-	defer os.Unsetenv("OLLAMA_BASE_URL")
-	p2, err := NewLLMProvider("ollama", "qwen3:latest", "", "")
+	if setErr := os.Setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1"); setErr != nil {
+		t.Fatalf("failed to set env: %v", setErr)
+	}
+	defer func() {
+		_ = os.Unsetenv("OLLAMA_BASE_URL")
+	}()
+	p2, err := NewLLMProvider(providerOllama, "qwen3:latest", "", "")
 	if err != nil {
 		t.Fatalf("failed to create overridden Ollama: %v", err)
 	}
@@ -157,10 +163,11 @@ func TestMiniMaxRoundTripper(t *testing.T) {
 				t.Fatalf("failed to create request: %v", err)
 			}
 
-			_, err = rt.RoundTrip(req)
+			resp, err := rt.RoundTrip(req)
 			if err != nil {
 				t.Fatalf("failed RoundTrip: %v", err)
 			}
+			_ = resp.Body.Close()
 
 			var payload map[string]interface{}
 			err = json.Unmarshal(mock.requestBody, &payload)

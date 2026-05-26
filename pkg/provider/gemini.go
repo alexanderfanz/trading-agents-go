@@ -48,7 +48,11 @@ func (a *GeminiAdapter) Generate(ctx context.Context, req LLMRequest) (string, e
 	}
 
 	if req.MaxTokens > 0 {
-		config.MaxOutputTokens = int32(req.MaxTokens)
+		if req.MaxTokens <= 2147483647 {
+			config.MaxOutputTokens = int32(req.MaxTokens)
+		} else {
+			config.MaxOutputTokens = 2147483647
+		}
 	}
 
 	if req.SystemPrompt != "" {
@@ -58,7 +62,12 @@ func (a *GeminiAdapter) Generate(ctx context.Context, req LLMRequest) (string, e
 	}
 
 	if req.Thinking != nil && req.Thinking.BudgetTokens > 0 {
-		budget32 := int32(req.Thinking.BudgetTokens)
+		var budget32 int32
+		if req.Thinking.BudgetTokens <= 2147483647 {
+			budget32 = int32(req.Thinking.BudgetTokens)
+		} else {
+			budget32 = 2147483647
+		}
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			ThinkingBudget: &budget32,
 		}
@@ -119,7 +128,7 @@ func ConvertTypeToSchema(t reflect.Type) *genai.Schema {
 	schema := &genai.Schema{}
 
 	// Handle pointer dereferencing
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		schema = ConvertTypeToSchema(t.Elem())
 		schema.Nullable = boolPtr(true)
 		return schema
@@ -170,7 +179,7 @@ func ConvertTypeToSchema(t reflect.Type) *genai.Schema {
 			schema.Properties[fieldName] = fieldSchema
 
 			// Required configuration: fields are required if they aren't pointers or omitempty
-			if !omitempty && field.Type.Kind() != reflect.Ptr {
+			if !omitempty && field.Type.Kind() != reflect.Pointer {
 				schema.Required = append(schema.Required, fieldName)
 			}
 		}

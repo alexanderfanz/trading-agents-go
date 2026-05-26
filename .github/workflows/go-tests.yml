@@ -1,6 +1,13 @@
 name: Go CI
 
 on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/go-tests.yml'
   pull_request:
     branches: [ "main" ]
     paths:
@@ -10,11 +17,34 @@ on:
       - '.github/workflows/go-tests.yml'
   workflow_dispatch:
 
-jobs:
-  test:
-    name: Run Go Tests
-    runs-on: ubuntu-latest
+# Automatically cancel active duplicate workflow runs for the same branch if a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
+  lint:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
+  test:
+    name: Run Unit Tests with Race Detector
+    runs-on: ubuntu-latest
+    needs: lint
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -28,5 +58,5 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run Tests
-        run: go test -v ./...
+      - name: Run Tests with Race Detection
+        run: go test -race -v ./...

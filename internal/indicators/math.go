@@ -156,13 +156,14 @@ func MFI(high, low, close, volume []float64, period int, pmfBuf, nmfBuf, out []f
 	for i := 1; i < n; i++ {
 		tp := (high[i] + low[i] + close[i]) / 3.0
 		rmf := tp * volume[i]
-		if tp > tpPrev {
+		switch {
+		case tp > tpPrev:
 			pmfBuf[i] = rmf
 			nmfBuf[i] = 0.0
-		} else if tp < tpPrev {
+		case tp < tpPrev:
 			pmfBuf[i] = 0.0
 			nmfBuf[i] = rmf
-		} else {
+		default:
 			pmfBuf[i] = 0.0
 			nmfBuf[i] = 0.0
 		}
@@ -249,7 +250,7 @@ func ATR(high, low, close []float64, period int, trBuf, out []float64) error {
 func BollingerBands(close []float64, period int, k float64, midBand, upperBand, lowerBand []float64) error {
 	n := len(close)
 	if period <= 0 {
-		return errors.New("Bollinger Bands period must be greater than zero")
+		return errors.New("bollinger bands period must be greater than zero")
 	}
 	if n < period {
 		return errors.New("insufficient data points for Bollinger Bands period")

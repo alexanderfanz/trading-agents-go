@@ -112,7 +112,7 @@ func (sm *YahooSessionManager) refresh(ctx context.Context) (string, string, err
 		return "", "", fmt.Errorf("fc request failed: %w", err)
 	}
 	_, _ = io.Copy(io.Discard, resp1.Body)
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 
 	u, err := url.Parse(sm.crumbURL)
 	if err != nil {
@@ -140,7 +140,9 @@ func (sm *YahooSessionManager) refresh(ctx context.Context) (string, string, err
 	if err != nil {
 		return "", "", fmt.Errorf("crumb request failed: %w", err)
 	}
-	defer resp2.Body.Close()
+	defer func() {
+		_ = resp2.Body.Close()
+	}()
 
 	if resp2.StatusCode != http.StatusOK {
 		return "", "", fmt.Errorf("crumb request returned non-200 status code: %d", resp2.StatusCode)
