@@ -50,7 +50,9 @@ func run() int {
 	help := flag.Bool("h", false, "Show help usage description")
 	flag.BoolVar(help, "help", false, "Show help usage description")
 
-	flag.Parse()
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		return 2
+	}
 
 	if *help {
 		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
