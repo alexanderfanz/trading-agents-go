@@ -19,8 +19,67 @@ var (
 	buildDate = "unknown"
 )
 
+const (
+	ansiReset = "\x1b[0m"
+	ansiBold  = "\x1b[1m"
+	ansiCyan  = "\x1b[36m"
+)
+
 func main() {
 	os.Exit(run(os.Args[1:]))
+}
+
+func printBanner(subtitle string) {
+	border := "+-------------------------------------+"
+	title := "TradingAgents Go Orchestrator"
+
+	fmt.Println()
+	fmt.Println()
+
+	if stdoutSupportsColor() {
+		fmt.Printf("%s%s%s\n", ansiCyan, border, ansiReset)
+		fmt.Printf("%s|%s %s%-35s%s %s|%s\n", ansiCyan, ansiReset, ansiBold, title, ansiReset, ansiCyan, ansiReset)
+		fmt.Printf("%s|%s %-35s %s|%s\n", ansiCyan, ansiReset, subtitle, ansiCyan, ansiReset)
+		fmt.Printf("%s%s%s\n", ansiCyan, border, ansiReset)
+	} else {
+		fmt.Println(border)
+		fmt.Printf("| %-35s |\n", title)
+		fmt.Printf("| %-35s |\n", subtitle)
+		fmt.Println(border)
+	}
+
+	fmt.Println()
+	fmt.Printf("Version:    %s\n", version)
+	fmt.Printf("Build date: %s\n", buildDate)
+}
+
+func printHelpHeader() {
+	printBanner("Usage Guide")
+	fmt.Println()
+	fmt.Println("Options:")
+}
+
+func printRunHeader() {
+	printBanner("Analysis Run")
+	fmt.Println()
+}
+
+func printInteractiveHeader() {
+	printBanner("Interactive Setup")
+	fmt.Println()
+}
+
+func stdoutSupportsColor() bool {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func run(args []string) int {
@@ -54,9 +113,7 @@ func run(args []string) int {
 	}
 
 	if *help {
-		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
-		fmt.Printf("Version: %s\n", version)
-		fmt.Printf("Build date: %s\n", buildDate)
+		printHelpHeader()
 		flags.SetOutput(os.Stdout)
 		flags.PrintDefaults()
 		return 0
@@ -85,6 +142,8 @@ func run(args []string) int {
 	}
 
 	if *interactiveMode {
+		printInteractiveHeader()
+
 		var err error
 		opts, err = interactive.PromptForRunOptions(cfg, opts)
 		if err != nil {
@@ -93,5 +152,6 @@ func run(args []string) int {
 		}
 	}
 
+	printRunHeader()
 	return app.Run(cfg, opts, cliController)
 }
