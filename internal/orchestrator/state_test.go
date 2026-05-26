@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func TestSafeReportMap_ConcurrentStoreAndRead(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			name := string(rune('A' + (i % 26)))
+			name := fmt.Sprintf("analyst-%d", i)
 			m.Store(name, "report-"+name, time.Duration(i)*time.Millisecond)
 		}()
 	}
