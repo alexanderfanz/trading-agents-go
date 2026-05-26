@@ -122,21 +122,13 @@ func runForm(values *formValues) error {
 	}
 
 	values.applyModelDefaultsForProvider()
+	quickModelField := modelFieldForProvider(values.provider, modelCategoryQuick, &values.quickThinkLLM)
+	deepModelField := modelFieldForProvider(values.provider, modelCategoryDeep, &values.deepThinkLLM)
 
 	return huh.NewForm(
 		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Quick-thinking model").
-				Description(modelSelectDescription(values.provider, "quick")).
-				Value(&values.quickThinkLLM).
-				Options(modelOptionsForProvider(values.provider, modelCategoryQuick)...).
-				Validate(validateRequired("quick-thinking model")),
-			huh.NewSelect[string]().
-				Title("Deep-thinking model").
-				Description(modelSelectDescription(values.provider, "deep")).
-				Value(&values.deepThinkLLM).
-				Options(modelOptionsForProvider(values.provider, modelCategoryDeep)...).
-				Validate(validateRequired("deep-thinking model")),
+			quickModelField,
+			deepModelField,
 			huh.NewSelect[int]().
 				Title("Research depth").
 				Description("Applies to both debate rounds and risk discussion rounds.").
@@ -180,6 +172,36 @@ func runForm(values *formValues) error {
 				Validate(validatePositiveIntString("execution timeout")),
 		).Title("Advanced Paths"),
 	).WithTheme(huh.ThemeCatppuccin()).Run()
+}
+
+func modelFieldForProvider(provider string, category modelCategory, value *string) huh.Field {
+	label := modelCategoryLabel(category)
+	options := modelOptionsForProvider(provider, category)
+	if len(options) > 0 {
+		return huh.NewSelect[string]().
+			Title(label).
+			Description(modelSelectDescription(provider, string(category))).
+			Value(value).
+			Options(options...).
+			Validate(validateRequired(strings.ToLower(label)))
+	}
+
+	return huh.NewInput().
+		Title(label).
+		Description("Enter custom model ID for " + strings.ToLower(strings.TrimSpace(provider))).
+		Value(value).
+		Validate(validateRequired(strings.ToLower(label)))
+}
+
+func modelCategoryLabel(category modelCategory) string {
+	switch category {
+	case modelCategoryQuick:
+		return "Quick-thinking model"
+	case modelCategoryDeep:
+		return "Deep-thinking model"
+	default:
+		return "Model"
+	}
 }
 
 func (v *formValues) applyModelDefaultsForProvider() {

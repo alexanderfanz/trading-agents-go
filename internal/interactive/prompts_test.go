@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
+
 	"trading-agents-go/internal/app"
 	"trading-agents-go/internal/config"
 )
@@ -220,6 +222,24 @@ func TestModelOptionsForProvider(t *testing.T) {
 		if deepOptions[0].Value != defaults.deep {
 			t.Fatalf("expected %s first deep option to match default %s, got %s", providerOption.Value, defaults.deep, deepOptions[0].Value)
 		}
+	}
+}
+
+func TestModelFieldForProviderUsesSelectForCuratedModels(t *testing.T) {
+	value := "old-model"
+	field := modelFieldForProvider(providerGemini, modelCategoryQuick, &value)
+
+	if _, ok := field.(*huh.Select[string]); !ok {
+		t.Fatalf("expected curated provider to use select field, got %T", field)
+	}
+}
+
+func TestModelFieldForProviderUsesInputForCustomModels(t *testing.T) {
+	value := "custom-model"
+	field := modelFieldForProvider("custom-provider", modelCategoryDeep, &value)
+
+	if _, ok := field.(*huh.Input); !ok {
+		t.Fatalf("expected custom provider to use input field, got %T", field)
 	}
 }
 
