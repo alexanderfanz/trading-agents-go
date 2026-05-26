@@ -28,6 +28,9 @@ type ReportData struct {
 
 // GenerateLocalReports executes folder creation and writes individual & consolidated markdown reports.
 func GenerateLocalReports(data *ReportData, baseDir string) error {
+	if data == nil {
+		return fmt.Errorf("report data cannot be nil")
+	}
 	// Construct the root reports folder name: reports/<TICKER>_<YYYYMMDD_HHMMSS>
 	timestampStr := data.Timestamp.Format("20060102_150405")
 	folderName := fmt.Sprintf("%s_%s", data.Ticker, timestampStr)
