@@ -37,7 +37,7 @@ func insertCheckpointRow(t *testing.T, mgr *SQLConnectionManager, id, ticker, tr
 
 	query := `
 	INSERT INTO checkpoints (id, ticker, trade_date, step_index, state_data, checksum, version, updated_at)
-	VALUES (?, ?, ?, 0, ?, 'checksum', '1.0.0', ` + updatedAtExpr + `);`
+	VALUES (?, ?, ?, 0, ?, 'checksum', '1.0.0', ` + updatedAtExpr + `);` // #nosec G202 -- test-only SQL datetime expressions
 
 	_, err := mgr.writeDB.Exec(query, id, ticker, tradeDate, []byte("test-payload"))
 	if err != nil {
