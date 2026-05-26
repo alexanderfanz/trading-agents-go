@@ -59,7 +59,7 @@ jobs:
         run: go mod verify
 
       - name: Run Tests with Coverage and Race Detection
-        run: go test -race -coverprofile=coverage.out -covermode=atomic -v ./...
+        run: make coverage
 
       - name: Upload Coverage to Codecov
         uses: codecov/codecov-action@v5
