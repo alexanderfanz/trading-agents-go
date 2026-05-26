@@ -299,9 +299,9 @@ func TestDebugLoggingRoundTripper_GeminiTokenMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		_ = os.RemoveAll(tempDir)
-	}()
+	})
 
 	mockRespBody := `{"usageMetadata": {"promptTokenCount": 15, "candidatesTokenCount": 25, "totalTokenCount": 40}}`
 	mock := &mockRoundTripper{
