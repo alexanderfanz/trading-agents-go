@@ -162,11 +162,11 @@ func (l *DebugLoggingRoundTripper) logTransaction(
 	urlStr := req.URL.String()
 	switch req.URL.Host {
 	case "api.openai.com":
-		provider = "openai"
+		provider = providerOpenAI
 	case "generativelanguage.googleapis.com":
-		provider = "gemini"
+		provider = providerGemini
 	case "api.anthropic.com":
-		provider = "anthropic"
+		provider = providerAnthropic
 	}
 
 	tokens := l.extractTokenMetrics(provider, respBody)
@@ -210,7 +210,7 @@ func (l *DebugLoggingRoundTripper) extractTokenMetrics(provider string, body []b
 	}
 
 	switch provider {
-	case "openai":
+	case providerOpenAI:
 		if usage, ok := raw["usage"].(map[string]interface{}); ok {
 			prompt, _ := usage["prompt_tokens"].(float64)
 			completion, _ := usage["completion_tokens"].(float64)
@@ -221,7 +221,7 @@ func (l *DebugLoggingRoundTripper) extractTokenMetrics(provider string, body []b
 				TotalTokens:      int(total),
 			}
 		}
-	case "gemini":
+	case providerGemini:
 		if usage, ok := raw["usageMetadata"].(map[string]interface{}); ok {
 			prompt, _ := usage["promptTokenCount"].(float64)
 			completion, _ := usage["candidatesTokenCount"].(float64)

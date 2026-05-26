@@ -227,7 +227,7 @@ func TestDebugLoggingRoundTripper(t *testing.T) {
 		t.Fatalf("failed to unmarshal log: %v", err)
 	}
 
-	if payload.Provider != "openai" {
+	if payload.Provider != providerOpenAI {
 		t.Errorf("expected provider 'openai', got %s", payload.Provider)
 	}
 	if payload.Tokens == nil || payload.Tokens.PromptTokens != 12 || payload.Tokens.CompletionTokens != 8 {

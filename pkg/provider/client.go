@@ -35,36 +35,56 @@ type LLMProvider interface {
 	GenerateStructured(ctx context.Context, req LLMRequest, target interface{}) error
 }
 
+const (
+	providerOpenAI     = "openai"
+	providerAnthropic  = "anthropic"
+	providerGemini     = "gemini"
+	providerGoogle     = "google"
+	providerAzure      = "azure"
+	providerXAI        = "xai"
+	providerDeepSeek   = "deepseek"
+	providerQwen       = "qwen"
+	providerQwenCN     = "qwen-cn"
+	providerGLM        = "glm"
+	providerGLMCN      = "glm-cn"
+	providerMinimax    = "minimax"
+	providerMinimaxCN  = "minimax-cn"
+	providerOpenRouter = "openrouter"
+	providerOllama     = "ollama"
+
+	geminiEnv = "GEMINI_API_KEY"
+)
+
 // ProviderAPIKeyEnv maps LLM providers to their canonical API key environment variable.
 var ProviderAPIKeyEnv = map[string]string{
-	"openai":     "OPENAI_API_KEY",
-	"anthropic":  "ANTHROPIC_API_KEY",
-	"gemini":     "GEMINI_API_KEY",
-	"google":     "GEMINI_API_KEY",
-	"azure":      "AZURE_OPENAI_API_KEY",
-	"xai":        "XAI_API_KEY",
-	"deepseek":   "DEEPSEEK_API_KEY",
-	"qwen":       "DASHSCOPE_API_KEY",
-	"qwen-cn":    "DASHSCOPE_CN_API_KEY",
-	"glm":        "ZHIPU_API_KEY",
-	"glm-cn":     "ZHIPU_CN_API_KEY",
-	"minimax":    "MINIMAX_API_KEY",
-	"minimax-cn": "MINIMAX_CN_API_KEY",
-	"openrouter": "OPENROUTER_API_KEY",
+	providerOpenAI:     "OPENAI_API_KEY",
+	providerAnthropic:  "ANTHROPIC_API_KEY",
+	providerGemini:     geminiEnv,
+	providerGoogle:     geminiEnv,
+	providerAzure:      "AZURE_OPENAI_API_KEY",
+	providerXAI:        "XAI_API_KEY",
+	providerDeepSeek:   "DEEPSEEK_API_KEY",
+	providerQwen:       "DASHSCOPE_API_KEY",
+	providerQwenCN:     "DASHSCOPE_CN_API_KEY",
+	providerGLM:        "ZHIPU_API_KEY",
+	providerGLMCN:      "ZHIPU_CN_API_KEY",
+	providerMinimax:    "MINIMAX_API_KEY",
+	providerMinimaxCN:  "MINIMAX_CN_API_KEY",
+	providerOpenRouter: "OPENROUTER_API_KEY",
 }
 
 // ProviderBaseURLs maps LLM providers to their canonical base API URLs.
 var ProviderBaseURLs = map[string]string{
-	"xai":        "https://api.x.ai/v1",
-	"deepseek":   "https://api.deepseek.com",
-	"qwen":       "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-	"qwen-cn":    "https://dashscope.aliyuncs.com/compatible-mode/v1",
-	"glm":        "https://api.z.ai/api/paas/v4/",
-	"glm-cn":     "https://open.bigmodel.cn/api/paas/v4/",
-	"minimax":    "https://api.minimax.io/v1",
-	"minimax-cn": "https://api.minimaxi.com/v1",
-	"openrouter": "https://openrouter.ai/api/v1",
-	"ollama":     "http://localhost:11434/v1",
+	providerXAI:        "https://api.x.ai/v1",
+	providerDeepSeek:   "https://api.deepseek.com",
+	providerQwen:       "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+	providerQwenCN:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+	providerGLM:        "https://api.z.ai/api/paas/v4/",
+	providerGLMCN:      "https://open.bigmodel.cn/api/paas/v4/",
+	providerMinimax:    "https://api.minimax.io/v1",
+	providerMinimaxCN:  "https://api.minimaxi.com/v1",
+	providerOpenRouter: "https://openrouter.ai/api/v1",
+	providerOllama:     "http://localhost:11434/v1",
 }
 
 // NewLLMProvider resolves, configures, and instantiates the correct LLM provider adapter.
@@ -79,11 +99,11 @@ func NewLLMProvider(providerName, model string, baseURLEverride string, debugDir
 	// Resolve the base URL (override takes priority)
 	baseURL := baseURLEverride
 	if baseURL == "" {
-		if provLower == "ollama" {
+		if provLower == providerOllama {
 			if envURL := os.Getenv("OLLAMA_BASE_URL"); envURL != "" {
 				baseURL = envURL
 			} else {
-				baseURL = ProviderBaseURLs["ollama"]
+				baseURL = ProviderBaseURLs[providerOllama]
 			}
 		} else if url, ok := ProviderBaseURLs[provLower]; ok {
 			baseURL = url
@@ -100,27 +120,27 @@ func NewLLMProvider(providerName, model string, baseURLEverride string, debugDir
 	}
 
 	switch provLower {
-	case "openai":
+	case providerOpenAI:
 		return NewOpenAIAdapter(apiKey, model, debugDir), nil
-	case "anthropic":
+	case providerAnthropic:
 		return NewAnthropicAdapter(apiKey, model, debugDir), nil
-	case "gemini", "google":
+	case providerGemini, providerGoogle:
 		return NewGeminiAdapter(apiKey, model, debugDir)
-	case "ollama":
+	case providerOllama:
 		return NewOllamaAdapter(baseURL, model, debugDir), nil
-	case "deepseek":
+	case providerDeepSeek:
 		return NewDeepSeekAdapter(apiKey, baseURL, model, debugDir), nil
-	case "qwen", "qwen-cn":
+	case providerQwen, providerQwenCN:
 		return NewQwenAdapter(apiKey, baseURL, model, debugDir), nil
-	case "glm", "glm-cn":
+	case providerGLM, providerGLMCN:
 		return NewZhipuAdapter(apiKey, baseURL, model, debugDir), nil
-	case "minimax", "minimax-cn":
+	case providerMinimax, providerMinimaxCN:
 		return NewMiniMaxAdapter(apiKey, baseURL, model, debugDir), nil
-	case "xai":
+	case providerXAI:
 		return NewXAIAdapter(apiKey, baseURL, model, debugDir), nil
-	case "openrouter":
+	case providerOpenRouter:
 		return NewOpenRouterAdapter(apiKey, baseURL, model, debugDir), nil
-	case "azure":
+	case providerAzure:
 		return NewAzureAdapter(apiKey, baseURL, model, debugDir), nil
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", providerName)

@@ -218,16 +218,16 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	// 2. Phase B: Concurrent Market Analysis (Step 0)
 	if state.StepIndex <= 0 {
 		_, err = cliController.RunStep(ctx, "Concurrent Market Analysis", func() (string, cli.CLIState, error) {
-			summary, err := o.RunConcurrentAnalysts(ctx, state)
-			if err != nil {
-				return "", cli.StateNeutral, err
+			summary, runErr := o.RunConcurrentAnalysts(ctx, state)
+			if runErr != nil {
+				return "", cli.StateNeutral, runErr
 			}
 			state.Lock()
 			state.StepIndex = 1
 			state.Unlock()
 
-			if err := o.checkpointer.Save(ctx, state); err != nil {
-				return "", cli.StateNeutral, err
+			if saveErr := o.checkpointer.Save(ctx, state); saveErr != nil {
+				return "", cli.StateNeutral, saveErr
 			}
 			return summary, cli.StateSystemAction, nil
 		})
@@ -239,16 +239,16 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	// 3. Phase C: Research Debate & Consensus (Step 1)
 	if state.StepIndex <= 1 {
 		_, err = cliController.RunStep(ctx, "Research Debate & Consensus", func() (string, cli.CLIState, error) {
-			renderedPlan, cliState, err := o.RunResearchDebate(ctx, state)
-			if err != nil {
-				return "", cli.StateNeutral, err
+			renderedPlan, cliState, runErr := o.RunResearchDebate(ctx, state)
+			if runErr != nil {
+				return "", cli.StateNeutral, runErr
 			}
 			state.Lock()
 			state.StepIndex = 2
 			state.Unlock()
 
-			if err := o.checkpointer.Save(ctx, state); err != nil {
-				return "", cli.StateNeutral, err
+			if saveErr := o.checkpointer.Save(ctx, state); saveErr != nil {
+				return "", cli.StateNeutral, saveErr
 			}
 			return renderedPlan, cliState, nil
 		})
@@ -260,16 +260,16 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	// 4. Phase D: Risk Assessment & Sizing debate (Step 2)
 	if state.StepIndex <= 2 {
 		_, err = cliController.RunStep(ctx, "Risk Assessment & Position Sizing", func() (string, cli.CLIState, error) {
-			renderedDecision, cliState, err := o.RunRiskAndSizing(ctx, state)
-			if err != nil {
-				return "", cli.StateNeutral, err
+			renderedDecision, cliState, runErr := o.RunRiskAndSizing(ctx, state)
+			if runErr != nil {
+				return "", cli.StateNeutral, runErr
 			}
 			state.Lock()
 			state.StepIndex = 3
 			state.Unlock()
 
-			if err := o.checkpointer.Save(ctx, state); err != nil {
-				return "", cli.StateNeutral, err
+			if saveErr := o.checkpointer.Save(ctx, state); saveErr != nil {
+				return "", cli.StateNeutral, saveErr
 			}
 			return renderedDecision, cliState, nil
 		})
@@ -760,9 +760,9 @@ Fundamentals:
 		aggPrompt := fmt.Sprintf(`Provide your risk feedback representing the AGGRESSIVE risk appetite for %s.
 Current History:
 %s`, state.Ticker, history)
-		aggOut, err := aggRiskAgent.Call(ctx, aggPrompt)
-		if err != nil {
-			return "", cli.StateNeutral, err
+		aggOut, callErr := aggRiskAgent.Call(ctx, aggPrompt)
+		if callErr != nil {
+			return "", cli.StateNeutral, callErr
 		}
 		state.Lock()
 		state.RiskDebate.History += "\nAggressive Risk: " + aggOut
@@ -777,9 +777,9 @@ Current History:
 		conPrompt := fmt.Sprintf(`Provide your risk feedback representing the CONSERVATIVE risk appetite for %s.
 Current History:
 %s`, state.Ticker, history)
-		conOut, err := conRiskAgent.Call(ctx, conPrompt)
-		if err != nil {
-			return "", cli.StateNeutral, err
+		conOut, callErr := conRiskAgent.Call(ctx, conPrompt)
+		if callErr != nil {
+			return "", cli.StateNeutral, callErr
 		}
 		state.Lock()
 		state.RiskDebate.History += "\nConservative Risk: " + conOut
@@ -794,9 +794,9 @@ Current History:
 		neuPrompt := fmt.Sprintf(`Provide your risk feedback representing the NEUTRAL risk appetite for %s.
 Current History:
 %s`, state.Ticker, history)
-		neuOut, err := neuRiskAgent.Call(ctx, neuPrompt)
-		if err != nil {
-			return "", cli.StateNeutral, err
+		neuOut, callErr := neuRiskAgent.Call(ctx, neuPrompt)
+		if callErr != nil {
+			return "", cli.StateNeutral, callErr
 		}
 		state.Lock()
 		state.RiskDebate.History += "\nNeutral Risk: " + neuOut
