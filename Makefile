@@ -1,4 +1,4 @@
-.PHONY: all fmt lint vet test test-race build clean
+.PHONY: all fmt lint vet test test-race build clean coverage coverage-html
 
 # Default target runs all major quality checks, tests, and compiles the binary
 all: fmt vet test build
@@ -26,9 +26,12 @@ test:
 test-race:
 	go test -race -v ./...
 
-# Run unit tests with coverage profile and open html report in browser
+# Run unit tests with coverage profile
 coverage:
 	go test -coverprofile=coverage.out -covermode=atomic ./...
+
+# Open html report in browser
+coverage-html: coverage
 	go tool cover -html=coverage.out
 
 
