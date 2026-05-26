@@ -400,9 +400,9 @@ func TestAdapters_DebugDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		_ = os.RemoveAll(tempDir)
-	}()
+	})
 
 	// 1. OpenAI
 	oa := NewOpenAIAdapter("mock-key", "gpt-4o", tempDir)
