@@ -8,148 +8,540 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestFetchAndStreamOHLCV_LocalFile(t *testing.T) {
-	dir := t.TempDir()
-	csvPath := filepath.Join(dir, "ohlcv.csv")
-	tradeDate := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
-	csv := strings.Join([]string{
-		"Date,Open,High,Low,Close,Adj Close,Volume",
-		"2026-05-18,100.00,105.00,99.00,104.00,104.00,10000",
-		"2026-05-19,101.00,106.00,100.00,105.00,105.00,11000",
-		"2026-05-20,102.00,107.00,101.00,106.00,106.00,12000",
-		"2026-05-21,103.00,108.00,102.00,107.00,107.00,13000", // after tradeDate — filtered
-	}, "\n") + "\n"
-	if err := os.WriteFile(csvPath, []byte(csv), 0600); err != nil {
-		t.Fatalf("write csv: %v", err)
-	}
+func testResilientClient(transport http.RoundTripper) *ResilientHTTPClient {
+	httpClient := &http.Client{Transport: transport}
+	limiter := NewTokenBucket(10, 10)
+	return NewResilientHTTPClient(httpClient, limiter, 2, 1*time.Millisecond, 5*time.Millisecond)
+}
 
-	reader := NewYahooFinanceCSVReader(nil, "")
-	candles, err := reader.FetchAndStreamOHLCV(context.Background(), csvPath, tradeDate)
+func ohlcvCacheFile(cacheDir, ticker string) string {
+	today := time.Now()
+	start5Y := today.AddDate(-5, 0, 0)
+	return filepath.Join(cacheDir, fmt.Sprintf("%s-YFin-data-%s-%s.csv",
+		ticker, start5Y.Format("2006-01-02"), today.Format("2006-01-02")))
+}
+
+func loadTestFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name)) // #nosec G304 -- test fixture path
 	if err != nil {
-		t.Fatalf("FetchAndStreamOHLCV: %v", err)
+		t.Fatalf("failed to read fixture %s: %v", name, err)
 	}
-	if len(candles) != 3 {
-		t.Fatalf("expected 3 candles on/before trade date, got %d", len(candles))
+	return data
+}
+
+func newMockSessionManager(t *testing.T) *YahooSessionManager {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fc":
+			http.SetCookie(w, &http.Cookie{
+				Name:     mockCookieName,
+				Value:    mockCookieValue,
+				Secure:   true,
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+			})
+			w.WriteHeader(http.StatusNotFound)
+		case "/getcrumb":
+			cookie, err := r.Cookie(mockCookieName)
+			if err != nil || cookie.Value != mockCookieValue {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(mockCrumbValue))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	sm := &YahooSessionManager{
+		fcURL:    server.URL + "/fc",
+		crumbURL: server.URL + "/getcrumb",
 	}
-	if candles[2].Close != 106.0 {
-		t.Errorf("last candle close = %f, want 106", candles[2].Close)
+	return sm
+}
+
+func assertNoLookAhead(t *testing.T, candles []Candle, tradeDate time.Time) {
+	t.Helper()
+	for _, c := range candles {
+		if c.Time.After(tradeDate) {
+			t.Errorf("look-ahead candle %s is after tradeDate %s", c.Time.Format("2006-01-02"), tradeDate.Format("2006-01-02"))
+		}
 	}
+}
+
+func seedOHLCVCache(t *testing.T, cacheDir, ticker string, rows ...string) string {
+	t.Helper()
+	cacheFile := ohlcvCacheFile(cacheDir, ticker)
+	var b strings.Builder
+	b.WriteString("Date,Open,High,Low,Close,Adj Close,Volume\n")
+	for _, row := range rows {
+		b.WriteString(row)
+		b.WriteByte('\n')
+	}
+	if err := os.WriteFile(cacheFile, []byte(b.String()), 0600); err != nil {
+		t.Fatalf("failed to seed cache: %v", err)
+	}
+	return cacheFile
 }
 
 func TestFetchOHLCV_CacheHit(t *testing.T) {
-	dir := t.TempDir()
-	tradeDate := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	seedOHLCVCache(t, cacheDir, "AAPL",
+		"2024-05-18,100.00,105.00,99.00,104.00,104.00,10000",
+		"2024-05-19,100.00,105.00,99.00,104.00,104.00,10000",
+		"2024-05-20,100.00,105.00,99.00,104.00,104.00,10000",
+		"2024-05-21,100.00,105.00,99.00,104.00,104.00,10000",
+	)
 
-	today := time.Now()
-	start5Y := today.AddDate(-5, 0, 0)
-	cacheFile := filepath.Join(dir, fmt.Sprintf("AAPL-YFin-data-%s-%s.csv",
-		start5Y.Format("2006-01-02"), today.Format("2006-01-02")))
+	var httpHits int32
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			atomic.AddInt32(&httpHits, 1)
+			return nil, fmt.Errorf("unexpected HTTP request: %s", req.URL)
+		},
+	})
+	reader := NewYahooFinanceCSVReader(client, cacheDir)
 
-	csv := "Date,Open,High,Low,Close,Adj Close,Volume\n" +
-		tradeDate.Format("2006-01-02") + ",100.00,105.00,99.00,104.00,104.00,10000\n"
-	if err := os.WriteFile(cacheFile, []byte(csv), 0600); err != nil {
-		t.Fatalf("write cache: %v", err)
-	}
-
-	reader := NewYahooFinanceCSVReader(nil, dir)
-	candles, err := reader.FetchOHLCV(context.Background(), "AAPL", start5Y, today, tradeDate)
+	candles, err := reader.FetchOHLCV(context.Background(), "AAPL", time.Time{}, time.Time{}, tradeDate)
 	if err != nil {
-		t.Fatalf("FetchOHLCV cache hit: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(candles) != 1 || candles[0].Close != 104.0 {
-		t.Fatalf("unexpected candles from cache: %+v", candles)
+	if hits := atomic.LoadInt32(&httpHits); hits != 0 {
+		t.Fatalf("expected no HTTP requests on cache hit, got %d", hits)
+	}
+	if len(candles) != 3 {
+		t.Fatalf("expected 3 candles (look-ahead filtered), got %d", len(candles))
+	}
+	assertNoLookAhead(t, candles, tradeDate)
+	if candles[len(candles)-1].Time.Format("2006-01-02") != "2024-05-20" {
+		t.Errorf("expected last candle on tradeDate, got %s", candles[len(candles)-1].Time.Format("2006-01-02"))
 	}
 }
 
-func TestFetchOHLCV_ChartAPI(t *testing.T) {
-	chartBody := `{
-		"chart": {
-			"result": [{
-				"meta": {"gmtoffset": 0},
-				"timestamp": [1716163200, 1716249600],
-				"indicators": {
-					"quote": [{
-						"open": [150.0, 151.0],
-						"high": [155.0, 156.0],
-						"low": [149.0, 150.0],
-						"close": [152.0, 153.0],
-						"volume": [1000000.0, 1100000.0]
-					}],
-					"adjclose": [{"adjclose": [152.0, 153.0]}]
-				}
-			}]
-		}
-	}`
+func TestFetchOHLCV_OnlineChartMock(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	chartJSON := loadTestFixture(t, "chart_aapl.json")
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "/v8/finance/chart/") {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(chartBody))
-	}))
-	defer server.Close()
-
-	// Redirect chart fetch to test server by replacing transport — chart URL is hardcoded to query2.finance.yahoo.com.
-	// Use mock transport that rewrites host.
-	transport := &mockTransport{
+	var chartHits int32
+	client := testResilientClient(&mockTransport{
 		roundTrip: func(req *http.Request) (*http.Response, error) {
 			if strings.Contains(req.URL.Path, "/v8/finance/chart/") {
-				req.URL.Scheme = "http"
-				req.URL.Host = strings.TrimPrefix(server.URL, "http://")
-				return http.DefaultTransport.RoundTrip(req)
+				atomic.AddInt32(&chartHits, 1)
+				rec := httptest.NewRecorder()
+				rec.Header().Set("Content-Type", "application/json")
+				_, _ = rec.Write(chartJSON)
+				return rec.Result(), nil
 			}
-			return nil, fmt.Errorf("unexpected URL: %s", req.URL.String())
+			return nil, fmt.Errorf("unexpected request: %s", req.URL)
 		},
-	}
+	})
+	reader := NewYahooFinanceCSVReader(client, cacheDir)
 
-	client := NewResilientHTTPClient(&http.Client{Transport: transport}, NewTokenBucket(10, 10), 0, time.Millisecond, time.Millisecond)
-	dir := t.TempDir()
-	reader := NewYahooFinanceCSVReader(client, dir)
-
-	tradeDate := time.Date(2024, 5, 21, 0, 0, 0, 0, time.UTC)
-	start := tradeDate.AddDate(0, 0, -5)
-	candles, err := reader.FetchOHLCV(context.Background(), "AAPL", start, tradeDate, tradeDate)
+	candles, err := reader.FetchOHLCV(context.Background(), "AAPL", time.Time{}, time.Time{}, tradeDate)
 	if err != nil {
-		t.Fatalf("FetchOHLCV chart API: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hits := atomic.LoadInt32(&chartHits); hits != 1 {
+		t.Fatalf("expected exactly 1 chart request, got %d", hits)
 	}
 	if len(candles) != 2 {
-		t.Fatalf("expected 2 candles from chart API, got %d", len(candles))
+		t.Fatalf("expected 2 candles after look-ahead filter, got %d", len(candles))
+	}
+	assertNoLookAhead(t, candles, tradeDate)
+
+	cacheFile := ohlcvCacheFile(cacheDir, "AAPL")
+	if _, statErr := os.Stat(cacheFile); statErr != nil {
+		t.Fatalf("expected CSV cache file written: %v", statErr)
+	}
+	cacheData, err := os.ReadFile(cacheFile) // #nosec G304 -- cache under t.TempDir()
+	if err != nil {
+		t.Fatalf("failed to read cache: %v", err)
+	}
+	if !strings.Contains(string(cacheData), "2024-05-21") {
+		t.Error("expected cache CSV to include future date row")
+	}
+	if strings.Count(string(cacheData), "2024-05-21") != 1 {
+		t.Errorf("expected one 2024-05-21 row in cache, got data:\n%s", cacheData)
+	}
+}
+
+func TestFetchOHLCV_OnlineChartError(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			rec.WriteHeader(http.StatusInternalServerError)
+			return rec.Result(), nil
+		},
+	})
+	reader := NewYahooFinanceCSVReader(client, cacheDir)
+
+	_, err := reader.FetchOHLCV(context.Background(), "AAPL", time.Time{}, time.Time{}, tradeDate)
+	if err == nil {
+		t.Fatal("expected error when chart API returns 500")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("expected status 500 in error, got: %v", err)
+	}
+}
+
+func TestFetchAndStreamOHLCV_LocalFile(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	csvPath := filepath.Join(cacheDir, "stream.csv")
+	csvContent := "Date,Open,High,Low,Close,Adj Close,Volume\n" +
+		"2024-05-19,100.00,105.00,99.00,104.00,104.00,10000\n" +
+		"2024-05-20,101.00,106.00,100.00,105.00,105.00,11000\r\n" +
+		"\n" +
+		"2024-05-21,102.00,107.00,101.00,106.00,106.00,12000\n"
+	if err := os.WriteFile(csvPath, []byte(csvContent), 0600); err != nil {
+		t.Fatalf("failed to write csv: %v", err)
 	}
 
-	matches, _ := filepath.Glob(filepath.Join(dir, "AAPL-YFin-data-*.csv"))
-	if len(matches) == 0 {
-		t.Fatal("expected chart response to be written to cache")
+	reader := NewYahooFinanceCSVReader(nil, cacheDir)
+	candles, err := reader.FetchAndStreamOHLCV(context.Background(), csvPath, tradeDate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if len(candles) != 2 {
+		t.Fatalf("expected 2 candles (CRLF row + empty line skipped, future excluded), got %d", len(candles))
+	}
+	assertNoLookAhead(t, candles, tradeDate)
+	if candles[1].Close != 105.0 {
+		t.Errorf("expected second candle close 105.0, got %f", candles[1].Close)
+	}
+}
+
+func TestFetchAndStreamOHLCV_LocalFileError(t *testing.T) {
+	reader := NewYahooFinanceCSVReader(nil, t.TempDir())
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	_, err := reader.FetchAndStreamOHLCV(context.Background(), filepath.Join(t.TempDir(), "missing.csv"), tradeDate)
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestFetchAndStreamOHLCV_HTTP(t *testing.T) {
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	csvBody := "Date,Open,High,Low,Close,Adj Close,Volume\n" +
+		"2024-05-19,100.00,105.00,99.00,104.00,104.00,10000\n" +
+		"2024-05-21,102.00,107.00,101.00,106.00,106.00,12000\n"
+
+	sm := newMockSessionManager(t)
+	csvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("crumb") != mockCrumbValue {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = w.Write([]byte(csvBody))
+	}))
+	t.Cleanup(csvServer.Close)
+
+	client := testResilientClient(http.DefaultTransport)
+	reader := &YahooFinanceCSVReader{
+		client:     client,
+		cacheDir:   t.TempDir(),
+		sessionMgr: sm,
+	}
+
+	candles, err := reader.FetchAndStreamOHLCV(context.Background(), csvServer.URL, tradeDate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candles) != 1 {
+		t.Fatalf("expected 1 candle from HTTP stream, got %d", len(candles))
+	}
+	assertNoLookAhead(t, candles, tradeDate)
+}
+
+func TestFetchAndStreamOHLCV_HTTPUnauthorized(t *testing.T) {
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	sm := newMockSessionManager(t)
+
+	var quoteHits int32
+	csvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&quoteHits, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(csvServer.Close)
+
+	client := testResilientClient(http.DefaultTransport)
+	reader := &YahooFinanceCSVReader{
+		client:     client,
+		cacheDir:   t.TempDir(),
+		sessionMgr: sm,
+	}
+
+	_, err := reader.FetchAndStreamOHLCV(context.Background(), csvServer.URL, tradeDate)
+	if err == nil {
+		t.Fatal("expected error on 401 response")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected 401 in error, got: %v", err)
+	}
+
+	// Session should be invalidated; next credential fetch hits session server again.
+	_, _, err = sm.GetCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("expected session refresh after invalidation: %v", err)
+	}
+	if hits := atomic.LoadInt32(&quoteHits); hits != 1 {
+		t.Errorf("expected exactly 1 HTTP request, got %d", hits)
+	}
+}
+
+func TestFetchFundamentals_CacheHit(t *testing.T) {
+	cacheDir := t.TempDir()
+	cached := "# Company Fundamentals for AAPL\nName: Apple Inc.\nSector: Technology\n"
+	cacheFile := filepath.Join(cacheDir, "AAPL-fundamentals.txt")
+	if err := os.WriteFile(cacheFile, []byte(cached), 0600); err != nil {
+		t.Fatalf("failed to write cache: %v", err)
+	}
+
+	var httpHits int32
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			atomic.AddInt32(&httpHits, 1)
+			return nil, fmt.Errorf("unexpected HTTP request")
+		},
+	})
+	reader := NewYahooFinanceCSVReader(client, cacheDir)
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	out, err := reader.FetchFundamentals(context.Background(), "AAPL", tradeDate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out != cached {
+		t.Errorf("expected cached fundamentals, got: %s", out)
+	}
+	if atomic.LoadInt32(&httpHits) != 0 {
+		t.Fatalf("expected no HTTP on cache hit, got %d hits", httpHits)
+	}
+}
+
+func TestFetchFundamentals_OnlineQuoteSummary(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	quoteJSON := loadTestFixture(t, "quote_summary_aapl.json")
+
+	sm := newMockSessionManager(t)
+	var quoteHits int32
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/v10/finance/quoteSummary/") {
+				atomic.AddInt32(&quoteHits, 1)
+				if req.URL.Query().Get("crumb") != mockCrumbValue {
+					rec := httptest.NewRecorder()
+					rec.WriteHeader(http.StatusUnauthorized)
+					return rec.Result(), nil
+				}
+				rec := httptest.NewRecorder()
+				rec.Header().Set("Content-Type", "application/json")
+				_, _ = rec.Write(quoteJSON)
+				return rec.Result(), nil
+			}
+			return nil, fmt.Errorf("unexpected request: %s", req.URL)
+		},
+	})
+	reader := &YahooFinanceCSVReader{
+		client:     client,
+		cacheDir:   cacheDir,
+		sessionMgr: sm,
+	}
+
+	out, err := reader.FetchFundamentals(context.Background(), "AAPL", tradeDate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hits := atomic.LoadInt32(&quoteHits); hits != 1 {
+		t.Fatalf("expected 1 quoteSummary request, got %d", hits)
+	}
+	if !strings.Contains(out, "Apple Inc.") {
+		t.Errorf("expected company name in output: %s", out)
+	}
+	if !strings.Contains(out, "Sector: Technology") {
+		t.Errorf("expected sector in output: %s", out)
+	}
+
+	cacheFile := filepath.Join(cacheDir, "AAPL-fundamentals.txt")
+	if _, statErr := os.Stat(cacheFile); statErr != nil {
+		t.Fatalf("expected fundamentals cache written: %v", err)
+	}
+}
+
+func TestFetchFundamentals_OnlineUnauthorizedRetry(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	quoteJSON := loadTestFixture(t, "quote_summary_aapl.json")
+
+	sm := newMockSessionManager(t)
+	var attempts int32
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			if !strings.Contains(req.URL.Path, "/v10/finance/quoteSummary/") {
+				return nil, fmt.Errorf("unexpected request: %s", req.URL)
+			}
+			atomic.AddInt32(&attempts, 1)
+			rec := httptest.NewRecorder()
+			if atomic.LoadInt32(&attempts) == 1 {
+				rec.WriteHeader(http.StatusUnauthorized)
+				return rec.Result(), nil
+			}
+			rec.Header().Set("Content-Type", "application/json")
+			_, _ = rec.Write(quoteJSON)
+			return rec.Result(), nil
+		},
+	})
+	reader := &YahooFinanceCSVReader{
+		client:     client,
+		cacheDir:   cacheDir,
+		sessionMgr: sm,
+	}
+
+	_, err := reader.FetchFundamentals(context.Background(), "AAPL", tradeDate)
+	if err == nil {
+		t.Fatal("expected error on first 401 response")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected 401 in error, got: %v", err)
+	}
+
+	// After invalidation, a second fetch should succeed with refreshed credentials.
+	out, err := reader.FetchFundamentals(context.Background(), "AAPL", tradeDate)
+	if err != nil {
+		t.Fatalf("expected success after session refresh: %v", err)
+	}
+	if !strings.Contains(out, "Apple Inc.") {
+		t.Errorf("expected fundamentals after retry, got: %s", out)
+	}
+	if hits := atomic.LoadInt32(&attempts); hits < 2 {
+		t.Errorf("expected at least 2 quoteSummary attempts, got %d", hits)
+	}
+}
+
+func TestFetchFundamentals_OnlineError(t *testing.T) {
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	sm := newMockSessionManager(t)
+	client := testResilientClient(&mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Content-Type", "application/json")
+			_, _ = rec.Write([]byte(`{"quoteSummary":{"result":[]}}`))
+			return rec.Result(), nil
+		},
+	})
+	reader := &YahooFinanceCSVReader{
+		client:     client,
+		cacheDir:   cacheDir,
+		sessionMgr: sm,
+	}
+
+	_, err := reader.FetchFundamentals(context.Background(), "AAPL", tradeDate)
+	if err == nil {
+		t.Fatal("expected error for empty quoteSummary result")
+	}
+	if !strings.Contains(err.Error(), "no fundamentals data") {
+		t.Errorf("expected no data error, got: %v", err)
+	}
+}
+
+func TestParseCSVRowFastEdgeCases(t *testing.T) {
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	t.Run("invalid date length", func(t *testing.T) {
+		_, valid, err := parseCSVRowFast([]byte("2024-5-20,100,105,99,104,104,10000"), tradeDate)
+		if err == nil {
+			t.Fatal("expected invalid date error")
+		}
+		if valid {
+			t.Error("expected valid=false for invalid date")
+		}
+	})
+
+	t.Run("bad float", func(t *testing.T) {
+		_, valid, err := parseCSVRowFast([]byte("2024-05-20,not-a-float,105,99,104,104,10000"), tradeDate)
+		if err == nil {
+			t.Fatal("expected float parse error")
+		}
+		if valid {
+			t.Error("expected valid=false for bad float")
+		}
+	})
+
+	t.Run("short row", func(t *testing.T) {
+		_, valid, err := parseCSVRowFast([]byte("2024-05-20,100,105"), tradeDate)
+		if err == nil {
+			t.Fatal("expected incomplete columns error")
+		}
+		if valid {
+			t.Error("expected valid=false for short row")
+		}
+	})
+
+	t.Run("CRLF trailing carriage return", func(t *testing.T) {
+		row := []byte("2024-05-20,100.00,105.00,99.00,104.00,104.00,10000\r")
+		_, valid, err := parseCSVRowFast(row, tradeDate)
+		if err == nil {
+			t.Fatal("expected volume parse error when CR is not stripped")
+		}
+		if valid {
+			t.Error("expected valid=false when CR remains in row")
+		}
+		if !strings.Contains(err.Error(), "volume parse error") {
+			t.Errorf("expected volume parse error, got: %v", err)
+		}
+	})
+
+	t.Run("empty line", func(t *testing.T) {
+		_, valid, err := parseCSVRowFast([]byte(""), tradeDate)
+		if err == nil {
+			t.Fatal("expected error for empty line")
+		}
+		if valid {
+			t.Error("expected valid=false for empty line")
+		}
+	})
 }
 
 func TestFetchOHLCV_GlobFallback(t *testing.T) {
-	dir := t.TempDir()
-	tradeDate := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
-	fallbackFile := filepath.Join(dir, "AAPL-YFin-data-2020-01-01-2026-05-26.csv")
+	cacheDir := t.TempDir()
+	tradeDate := time.Date(2024, 5, 20, 0, 0, 0, 0, time.UTC)
+	fallbackFile := filepath.Join(cacheDir, "AAPL-YFin-data-2020-01-01-2026-05-26.csv")
 	csv := "Date,Open,High,Low,Close,Adj Close,Volume\n" +
 		tradeDate.Format("2006-01-02") + ",100.00,105.00,99.00,104.00,104.00,10000\n"
 	if err := os.WriteFile(fallbackFile, []byte(csv), 0600); err != nil {
 		t.Fatalf("write fallback cache: %v", err)
 	}
 
-	transport := &mockTransport{
+	client := testResilientClient(&mockTransport{
 		roundTrip: func(req *http.Request) (*http.Response, error) {
 			if strings.Contains(req.URL.Path, "/v8/finance/chart/") {
-				resp := httptest.NewRecorder()
-				resp.WriteHeader(http.StatusInternalServerError)
-				return resp.Result(), nil
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusInternalServerError)
+				return rec.Result(), nil
 			}
 			return nil, fmt.Errorf("unexpected URL: %s", req.URL.String())
 		},
-	}
-	client := NewResilientHTTPClient(&http.Client{Transport: transport}, NewTokenBucket(10, 10), 0, time.Millisecond, time.Millisecond)
-	reader := NewYahooFinanceCSVReader(client, dir)
+	})
+	reader := NewYahooFinanceCSVReader(client, cacheDir)
 
 	candles, err := reader.FetchOHLCV(context.Background(), "AAPL", tradeDate.AddDate(-1, 0, 0), tradeDate, tradeDate)
 	if err != nil {
@@ -160,139 +552,22 @@ func TestFetchOHLCV_GlobFallback(t *testing.T) {
 	}
 }
 
-func TestFetchFundamentals_CacheHit(t *testing.T) {
-	dir := t.TempDir()
-	cacheFile := filepath.Join(dir, "MSFT-fundamentals.txt")
-	want := "# Company Fundamentals for MSFT\nMarket Cap: 3000000.00\n"
-	if err := os.WriteFile(cacheFile, []byte(want), 0600); err != nil {
-		t.Fatalf("write fundamentals cache: %v", err)
-	}
-
-	reader := NewYahooFinanceCSVReader(nil, dir)
-	got, err := reader.FetchFundamentals(context.Background(), "MSFT", time.Now())
-	if err != nil {
-		t.Fatalf("FetchFundamentals cache: %v", err)
-	}
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestFetchFundamentals_Online(t *testing.T) {
-	quoteBody := `{
-		"quoteSummary": {
-			"result": [{
-				"assetProfile": {"sector": "Technology", "industry": "Software"},
-				"price": {"longName": "Microsoft Corporation"},
-				"financialData": {
-					"totalRevenue": {"raw": 200000},
-					"grossProfits": {"raw": 140000},
-					"ebitda": {"raw": 100000},
-					"netIncomeToCommon": {"raw": 80000},
-					"profitMargins": {"raw": 0.35},
-					"operatingMargins": {"raw": 0.42},
-					"returnOnEquity": {"raw": 0.40},
-					"returnOnAssets": {"raw": 0.18},
-					"debtToEquity": {"raw": 0.35},
-					"currentRatio": {"raw": 1.8},
-					"freeCashflow": {"raw": 60000}
-				},
-				"defaultKeyStatistics": {
-					"forwardPE": {"raw": 28.5},
-					"pegRatio": {"raw": 1.2},
-					"priceToBook": {"raw": 12.0},
-					"trailingEps": {"raw": 11.5},
-					"forwardEps": {"raw": 12.0},
-					"bookValue": {"raw": 25.0}
-				},
-				"summaryDetail": {
-					"marketCap": {"raw": 3000000000000},
-					"trailingPE": {"raw": 32.0},
-					"dividendYield": {"raw": 0.008},
-					"beta": {"raw": 0.9},
-					"fiftyTwoWeekHigh": {"raw": 450.0},
-					"fiftyTwoWeekLow": {"raw": 350.0},
-					"fiftyDayAverage": {"raw": 410.0},
-					"twoHundredDayAverage": {"raw": 400.0}
-				}
-			}]
-		}
-	}`
-
-	var sessionHits int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/fc"):
-			http.SetCookie(w, &http.Cookie{Name: "A3", Value: "sess"})
-			w.WriteHeader(http.StatusNotFound)
-		case strings.HasSuffix(r.URL.Path, "/getcrumb"):
-			_, _ = w.Write([]byte("testcrumb"))
-		case strings.Contains(r.URL.Path, "/quoteSummary/"):
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(quoteBody))
-		default:
-			http.NotFound(w, r)
-		}
-		sessionHits++
-	}))
-	defer server.Close()
-
-	sm := &YahooSessionManager{
-		fcURL:    server.URL + "/fc",
-		crumbURL: server.URL + "/getcrumb",
-	}
-	transport := &mockTransport{
-		roundTrip: func(req *http.Request) (*http.Response, error) {
-			if strings.Contains(req.URL.Path, "/quoteSummary/") {
-				req.URL.Scheme = "http"
-				req.URL.Host = strings.TrimPrefix(server.URL, "http://")
-				return http.DefaultTransport.RoundTrip(req)
-			}
-			return nil, fmt.Errorf("unexpected URL: %s", req.URL.String())
-		},
-	}
-	client := NewResilientHTTPClient(&http.Client{Transport: transport}, NewTokenBucket(10, 10), 0, time.Millisecond, time.Millisecond)
-	dir := t.TempDir()
-	reader := &YahooFinanceCSVReader{client: client, cacheDir: dir, sessionMgr: sm}
-
-	got, err := reader.FetchFundamentals(context.Background(), "MSFT", time.Now())
-	if err != nil {
-		t.Fatalf("FetchFundamentals online: %v", err)
-	}
-	for _, want := range []string{
-		"Microsoft Corporation",
-		"Technology",
-		"Market Cap: 3000000000000.00",
-		"PE Ratio (TTM): 32.00",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("fundamentals missing %q:\n%s", want, got)
-		}
-	}
-
-	cacheFile := filepath.Join(dir, "MSFT-fundamentals.txt")
-	if _, err := os.Stat(cacheFile); err != nil {
-		t.Fatalf("expected fundamentals cache file: %v", err)
-	}
-}
-
 func TestResilientClient503Retry(t *testing.T) {
 	attempts := 0
-	transport := &mockTransport{
+	client := testResilientClient(&mockTransport{
 		roundTrip: func(req *http.Request) (*http.Response, error) {
 			attempts++
 			if attempts < 2 {
-				resp := httptest.NewRecorder()
-				resp.WriteHeader(http.StatusServiceUnavailable)
-				return resp.Result(), nil
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusServiceUnavailable)
+				return rec.Result(), nil
 			}
-			resp := httptest.NewRecorder()
-			resp.WriteHeader(http.StatusOK)
-			_, _ = resp.Write([]byte("ok"))
-			return resp.Result(), nil
+			rec := httptest.NewRecorder()
+			rec.WriteHeader(http.StatusOK)
+			_, _ = rec.Write([]byte("ok"))
+			return rec.Result(), nil
 		},
-	}
-	client := NewResilientHTTPClient(&http.Client{Transport: transport}, NewTokenBucket(10, 10), 2, time.Millisecond, 5*time.Millisecond)
+	})
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com", nil)
 	resp, err := client.Do(req)
 	if err != nil {

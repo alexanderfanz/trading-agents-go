@@ -3,380 +3,500 @@ package orchestrator
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
+	"trading-agents-go/internal/checkpoint"
 	"trading-agents-go/internal/cli"
-	"trading-agents-go/internal/config"
-	"trading-agents-go/internal/dataflow"
-	"trading-agents-go/internal/indicators"
+	"trading-agents-go/internal/memory"
 	"trading-agents-go/pkg/provider"
 )
 
-type stubDataProvider struct {
-	candles      []dataflow.Candle
-	fundamentals string
-	ohlcvErr     error
-	fundErr      error
-}
-
-func (s *stubDataProvider) FetchOHLCV(ctx context.Context, ticker string, start, end, tradeDate time.Time) ([]dataflow.Candle, error) {
-	if s.ohlcvErr != nil {
-		return nil, s.ohlcvErr
-	}
-	return s.candles, nil
-}
-
-func (s *stubDataProvider) FetchFundamentals(ctx context.Context, ticker string, tradeDate time.Time) (string, error) {
-	if s.fundErr != nil {
-		return "", s.fundErr
-	}
-	return s.fundamentals, nil
-}
-
-type stubNewsSocial struct {
-	news        string
-	globalNews  string
-	stocktwits  string
-	reddit      string
-	newsErr     error
-	globalErr   error
-	stocktwitsErr error
-	redditErr   error
-}
-
-func (s *stubNewsSocial) FetchNews(ctx context.Context, ticker string, start, end time.Time) (string, error) {
-	if s.newsErr != nil {
-		return "", s.newsErr
-	}
-	return s.news, nil
-}
-
-func (s *stubNewsSocial) FetchGlobalNews(ctx context.Context, currDate time.Time, lookBackDays, limit int) (string, error) {
-	if s.globalErr != nil {
-		return "", s.globalErr
-	}
-	return s.globalNews, nil
-}
-
-func (s *stubNewsSocial) FetchStockTwits(ctx context.Context, ticker string, limit int) (string, error) {
-	if s.stocktwitsErr != nil {
-		return "", s.stocktwitsErr
-	}
-	return s.stocktwits, nil
-}
-
-func (s *stubNewsSocial) FetchReddit(ctx context.Context, ticker string, subreddits []string, limitPerSub int) (string, error) {
-	if s.redditErr != nil {
-		return "", s.redditErr
-	}
-	return s.reddit, nil
-}
-
-type failingLLM struct{}
-
-func (f *failingLLM) Generate(context.Context, provider.LLMRequest) (string, error) {
-	return "", errors.New("forced LLM failure")
-}
-
-func (f *failingLLM) GenerateStructured(context.Context, provider.LLMRequest, interface{}) error {
-	return errors.New("forced LLM failure")
-}
-
-func buildTestCandles(tradeDate time.Time, count int) []dataflow.Candle {
-	candles := make([]dataflow.Candle, 0, count)
-	for i := count; i >= 1; i-- {
-		d := tradeDate.AddDate(0, 0, -i)
-		candles = append(candles, dataflow.Candle{
-			Time:   d,
-			Open:   150,
-			High:   155,
-			Low:    149,
-			Close:  152,
-			Volume: 1_000_000,
-		})
-	}
-	return candles
-}
-
-func testOrchestrator(t *testing.T, llm provider.LLMProvider) *TradingOrchestrator {
-	t.Helper()
-	cfg := &config.Config{
-		MaxDebateRounds:      1,
-		MaxRiskDiscussRounds: 1,
-		OutputLanguage:       "English",
-	}
-	cache := indicators.NewIndicatorCache()
-	resolver := indicators.NewDynamicIndicatorResolver(cache)
-	return NewTradingOrchestrator(cfg, nil, &stubDataProvider{}, llm, resolver, &stubNewsSocial{})
-}
-
-func TestRenderResearchPlan(t *testing.T) {
-	got := RenderResearchPlan(ResearchPlan{
+func TestRenderResearchPlan_Golden(t *testing.T) {
+	plan := ResearchPlan{
 		Recommendation:   "Buy",
 		Rationale:        "Strong momentum",
-		StrategicActions: "Scale in on dips",
-	})
-	for _, want := range []string{"**Recommendation**: Buy", "**Rationale**: Strong momentum", "**Strategic Actions**: Scale in on dips"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("RenderResearchPlan missing %q:\n%s", want, got)
-		}
+		StrategicActions: "Accumulate on dips",
+	}
+	want := "**Recommendation**: Buy\n\n**Rationale**: Strong momentum\n\n**Strategic Actions**: Accumulate on dips"
+	if got := RenderResearchPlan(plan); got != want {
+		t.Fatalf("RenderResearchPlan() =\n%q\nwant\n%q", got, want)
 	}
 }
 
-func TestRenderTraderProposal(t *testing.T) {
-	entry := 182.5
-	stop := 174.0
-	size := "15%"
-	got := RenderTraderProposal(TraderProposal{
+func TestRenderTraderProposal_Golden(t *testing.T) {
+	entry := 150.25
+	stop := 140.00
+	sizing := "10%"
+	proposal := TraderProposal{
 		Action:         "Buy",
 		Reasoning:      "Breakout confirmed",
 		EntryPrice:     &entry,
 		StopLoss:       &stop,
-		PositionSizing: &size,
-	})
-	for _, want := range []string{
-		"**Action**: Buy",
-		"**Entry Price**: 182.50",
-		"**Stop Loss**: 174.00",
-		"**Position Sizing**: 15%",
-		"FINAL TRANSACTION PROPOSAL: **BUY**",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("RenderTraderProposal missing %q:\n%s", want, got)
-		}
+		PositionSizing: &sizing,
+	}
+	want := "**Action**: Buy\n\n**Reasoning**: Breakout confirmed\n\n**Entry Price**: 150.25\n\n**Stop Loss**: 140.00\n\n**Position Sizing**: 10%\n\nFINAL TRANSACTION PROPOSAL: **BUY**"
+	if got := RenderTraderProposal(proposal); got != want {
+		t.Fatalf("RenderTraderProposal() =\n%q\nwant\n%q", got, want)
 	}
 }
 
-func TestRenderPMDecision(t *testing.T) {
-	target := 215.0
-	horizon := "3-6 months"
-	got := RenderPMDecision(PortfolioDecision{
+func TestRenderPMDecision_Golden(t *testing.T) {
+	target := 200.00
+	horizon := "6 months"
+	decision := PortfolioDecision{
 		Rating:           "Overweight",
 		ExecutiveSummary: "High conviction",
 		InvestmentThesis: "Ecosystem moat",
 		PriceTarget:      &target,
 		TimeHorizon:      &horizon,
-	})
-	for _, want := range []string{
-		"**Rating**: Overweight",
-		"**Price Target**: 215.00",
-		"**Time Horizon**: 3-6 months",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("RenderPMDecision missing %q:\n%s", want, got)
-		}
+	}
+	want := "**Rating**: Overweight\n\n**Executive Summary**: High conviction\n\n**Investment Thesis**: Ecosystem moat\n\n**Price Target**: 200.00\n\n**Time Horizon**: 6 months"
+	if got := RenderPMDecision(decision); got != want {
+		t.Fatalf("RenderPMDecision() =\n%q\nwant\n%q", got, want)
 	}
 }
 
 func TestAnalystPanicError(t *testing.T) {
 	err := &AnalystPanicError{
-		AnalystName: "NewsAnalyst",
-		PanicValue:  "simulated panic",
-		StackTrace:  "goroutine 1",
-		Timestamp:   time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC),
+		AnalystName: "Market",
+		PanicValue:  "boom",
+		StackTrace:  "stack-trace",
+		Timestamp:   time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC),
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "NewsAnalyst") || !strings.Contains(msg, "simulated panic") {
-		t.Errorf("unexpected error message: %s", msg)
+	if !strings.Contains(msg, "Market") || !strings.Contains(msg, "boom") || !strings.Contains(msg, "stack-trace") {
+		t.Fatalf("unexpected error message: %q", msg)
 	}
 }
 
-func TestSafeReportMap_Concurrent(t *testing.T) {
-	m := NewSafeReportMap()
-	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			name := fmt.Sprintf("Analyst%d", i%4)
-			m.Store(name, fmt.Sprintf("report-%d", i), time.Duration(i)*time.Millisecond)
-		}(i)
-	}
-	wg.Wait()
+func TestRunConcurrentAnalysts_AllSucceed(t *testing.T) {
+	mockLLM := &behavioralMockLLM{}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
 
-	reports := m.GetReports()
-	if len(reports) == 0 {
-		t.Fatal("expected reports after concurrent stores")
-	}
-	latencies := m.GetLatencies()
-	if len(latencies) != len(reports) {
-		t.Fatalf("latency map size %d != report map size %d", len(latencies), len(reports))
-	}
-}
-
-func TestAddDebateMessage(t *testing.T) {
-	state := &TradingState{
-		InvestmentDebate: InvestDebateState{History: "### Starting Debate Room\n"},
-	}
-	AddDebateMessage(state, "Bull Analyst", "Growth thesis holds.")
-	AddDebateMessage(state, "Bear Analyst", "Valuation is stretched.")
-
-	if state.InvestmentDebate.Count != 2 {
-		t.Fatalf("expected debate count 2, got %d", state.InvestmentDebate.Count)
-	}
-	if !strings.Contains(state.InvestmentDebate.History, "Bull Analyst: Growth thesis holds.") {
-		t.Errorf("missing bull message: %s", state.InvestmentDebate.History)
-	}
-	if !strings.Contains(state.InvestmentDebate.History, "Bear Analyst: Valuation is stretched.") {
-		t.Errorf("missing bear message: %s", state.InvestmentDebate.History)
-	}
-}
-
-func TestRunConcurrentAnalysts_Success(t *testing.T) {
-	tradeDate := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
-	orch := testOrchestrator(t, provider.NewMockProvider("AAPL"))
-	orch.dataProvider = &stubDataProvider{
-		candles:      buildTestCandles(tradeDate, 250),
-		fundamentals: "Revenue (TTM): 380000.00",
-	}
-	orch.newsSocialProvider = &stubNewsSocial{
-		news:       "Apple launches product",
-		globalNews: "Fed holds rates steady",
-		stocktwits: "Bullish: 3 (75%)",
-		reddit:     "r/stocks — 2 recent posts",
-	}
-
-	state := &TradingState{Ticker: "AAPL", TradeDate: "2026-05-25", AnalystReports: make(map[string]string)}
 	summary, err := orch.RunConcurrentAnalysts(context.Background(), state)
 	if err != nil {
-		t.Fatalf("RunConcurrentAnalysts: %v", err)
+		t.Fatalf("RunConcurrentAnalysts failed: %v", err)
 	}
 	if !strings.Contains(summary, "Analyst Run Summary") {
-		t.Errorf("expected summary header, got: %s", summary)
+		t.Fatalf("expected summary header, got: %q", summary)
 	}
-	if len(state.AnalystReports) < 2 {
-		t.Fatalf("expected at least 2 analyst reports, got %d", len(state.AnalystReports))
+
+	state.RLock()
+	reports := state.AnalystReports
+	state.RUnlock()
+	if len(reports) != 4 {
+		t.Fatalf("expected 4 analyst reports, got %d", len(reports))
 	}
 	for _, name := range []string{"Market", "Sentiment", "News", "Fundamentals"} {
-		if _, ok := state.AnalystReports[name]; !ok {
-			t.Errorf("missing report for %s", name)
+		if reports[name] == "" {
+			t.Fatalf("missing report for %s", name)
 		}
 	}
 }
 
-func TestRunConcurrentAnalysts_CriticalFailure(t *testing.T) {
-	tradeDate := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
-	orch := testOrchestrator(t, &failingLLM{})
-	orch.dataProvider = &stubDataProvider{
-		candles:      buildTestCandles(tradeDate, 250),
-		fundamentals: "Revenue (TTM): 380000.00",
+func TestRunConcurrentAnalysts_PartialSuccess(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		roles: map[string]roleBehavior{
+			"news":         {err: errors.New("news analyst unavailable")},
+			"fundamentals": {err: errors.New("fundamentals analyst unavailable")},
+		},
 	}
-	orch.newsSocialProvider = &stubNewsSocial{news: "headline"}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
 
-	state := &TradingState{Ticker: "AAPL", TradeDate: "2026-05-25", AnalystReports: make(map[string]string)}
+	summary, err := orch.RunConcurrentAnalysts(context.Background(), state)
+	if err != nil {
+		t.Fatalf("expected partial success, got error: %v", err)
+	}
+	if !strings.Contains(summary, "Analyst Error") {
+		t.Fatalf("expected error lines in summary, got: %q", summary)
+	}
+
+	state.RLock()
+	reports := state.AnalystReports
+	state.RUnlock()
+	if len(reports) != 2 {
+		t.Fatalf("expected 2 successful reports, got %d", len(reports))
+	}
+}
+
+func TestRunConcurrentAnalysts_CriticalFailure(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		roles: map[string]roleBehavior{
+			"market":       {err: errors.New("market down")},
+			"sentiment":    {err: errors.New("sentiment down")},
+			"news":         {err: errors.New("news down")},
+			"fundamentals": {err: errors.New("fundamentals down")},
+		},
+	}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+
 	_, err := orch.RunConcurrentAnalysts(context.Background(), state)
 	if err == nil {
-		t.Fatal("expected critical pipeline failure")
+		t.Fatal("expected critical failure error")
 	}
 	if !strings.Contains(err.Error(), "critical pipeline failure") {
-		t.Errorf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunConcurrentAnalysts_PanicRecovery(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		roles: map[string]roleBehavior{
+			"news": {panic: true},
+		},
+	}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+
+	summary, err := orch.RunConcurrentAnalysts(context.Background(), state)
+	if err != nil {
+		t.Fatalf("expected recovery with 3/4 analysts, got: %v", err)
+	}
+	if !strings.Contains(summary, "News Analyst") || !strings.Contains(summary, "Panicked") {
+		t.Fatalf("expected panic recovery line in summary, got: %q", summary)
+	}
+
+	state.RLock()
+	reports := state.AnalystReports
+	state.RUnlock()
+	if len(reports) != 3 {
+		t.Fatalf("expected 3 reports after panic, got %d", len(reports))
 	}
 }
 
 func TestRunConcurrentAnalysts_InvalidTradeDate(t *testing.T) {
-	orch := testOrchestrator(t, provider.NewMockProvider("AAPL"))
-	state := &TradingState{Ticker: "AAPL", TradeDate: "not-a-date"}
+	orch := newTestOrchestrator(&behavioralMockLLM{}, nil, nil, 1, 1)
+	state := testTradingState()
+	state.TradeDate = "not-a-date"
+
 	_, err := orch.RunConcurrentAnalysts(context.Background(), state)
 	if err == nil || !strings.Contains(err.Error(), "invalid trade date") {
 		t.Fatalf("expected invalid trade date error, got: %v", err)
 	}
 }
 
-func TestRunResearchDebate(t *testing.T) {
-	orch := testOrchestrator(t, provider.NewMockProvider("AAPL"))
-	state := &TradingState{
-		Ticker:    "AAPL",
-		TradeDate: "2026-05-25",
-		AnalystReports: map[string]string{
-			"Market":       "bullish technicals",
-			"Sentiment":    "positive retail flow",
-			"News":         "product catalyst",
-			"Fundamentals": "strong margins",
-		},
-		InvestmentDebate: InvestDebateState{},
+func TestRunResearchDebate_StructuredOutput(t *testing.T) {
+	mockLLM := &behavioralMockLLM{}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{
+		"Market":       "market report",
+		"Sentiment":    "sentiment report",
+		"News":         "news report",
+		"Fundamentals": "fundamentals report",
 	}
 
 	rendered, cliState, err := orch.RunResearchDebate(context.Background(), state)
 	if err != nil {
-		t.Fatalf("RunResearchDebate: %v", err)
-	}
-	if !strings.Contains(rendered, "**Recommendation**: Buy") {
-		t.Errorf("expected rendered buy plan, got:\n%s", rendered)
+		t.Fatalf("RunResearchDebate failed: %v", err)
 	}
 	if cliState != cli.StateBullish {
-		t.Errorf("expected bullish CLI state, got %v", cliState)
+		t.Fatalf("cliState = %v, want bullish", cliState)
 	}
-	if state.InvestmentPlan == "" {
-		t.Fatal("expected investment plan on state")
-	}
-	if len(state.BullDebateHistory) != 1 || len(state.BearDebateHistory) != 1 {
-		t.Fatalf("expected 1 bull and 1 bear round, got bull=%d bear=%d",
-			len(state.BullDebateHistory), len(state.BearDebateHistory))
-	}
-}
-
-func TestRunRiskAndSizing(t *testing.T) {
-	orch := testOrchestrator(t, provider.NewMockProvider("AAPL"))
-	state := &TradingState{
-		Ticker:    "AAPL",
-		TradeDate: "2026-05-25",
-		AnalystReports: map[string]string{
-			"Market":       "bullish technicals",
-			"Fundamentals": "strong margins",
-		},
-		InvestmentPlan: "**Recommendation**: Buy",
-		RiskDebate:     RiskDebateState{},
-		Metadata:       map[string]string{"past_context": "Prior decision: Hold — outcome pending"},
+	want := "**Recommendation**: Buy\n\n**Rationale**: Strong fundamentals\n\n**Strategic Actions**: Accumulate on dips"
+	if rendered != want {
+		t.Fatalf("rendered plan =\n%q\nwant\n%q", rendered, want)
 	}
 
-	rendered, cliState, err := orch.RunRiskAndSizing(context.Background(), state)
-	if err != nil {
-		t.Fatalf("RunRiskAndSizing: %v", err)
+	state.RLock()
+	defer state.RUnlock()
+	if state.InvestmentPlan != want {
+		t.Fatalf("state.InvestmentPlan mismatch")
 	}
-	if !strings.Contains(rendered, "**Rating**: Overweight") {
-		t.Errorf("expected PM decision in output, got:\n%s", rendered)
+	if !strings.Contains(state.InvestmentDebate.History, "Bull Analyst:") {
+		t.Fatal("expected bull debate in history")
 	}
-	if cliState != cli.StateBullish {
-		t.Errorf("expected bullish CLI state, got %v", cliState)
-	}
-	if state.FinalTradeDecision == "" {
-		t.Fatal("expected final trade decision on state")
-	}
-	if state.TraderInvestmentPlan == "" || state.OptionsStrategy == "" {
-		t.Fatal("expected trader and options outputs on state")
-	}
-	if len(state.AggressiveRiskHistory) != 1 || len(state.ConservativeRiskHistory) != 1 || len(state.NeutralRiskHistory) != 1 {
-		t.Fatalf("expected one round of each risk analyst, got agg=%d con=%d neu=%d",
-			len(state.AggressiveRiskHistory), len(state.ConservativeRiskHistory), len(state.NeutralRiskHistory))
-	}
-	if len(state.SignalLogs) != 1 {
-		t.Fatalf("expected one signal log entry, got %d", len(state.SignalLogs))
+	if !strings.Contains(state.InvestmentDebate.History, "Bear Analyst:") {
+		t.Fatal("expected bear debate in history")
 	}
 }
 
 func TestRunResearchDebate_StructuredFallback(t *testing.T) {
-	orch := testOrchestrator(t, &failingLLM{})
-	state := &TradingState{
-		Ticker:    "AAPL",
-		TradeDate: "2026-05-25",
-		AnalystReports: map[string]string{
-			"Market": "x", "Sentiment": "x", "News": "x", "Fundamentals": "x",
-		},
-		InvestmentDebate: InvestDebateState{},
+	mockLLM := &behavioralMockLLM{structuredErr: errors.New("json parse failure")}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{
+		"Market": "m", "Sentiment": "s", "News": "n", "Fundamentals": "f",
 	}
-	_, _, err := orch.RunResearchDebate(context.Background(), state)
-	if err == nil {
-		t.Fatal("expected debate failure when all LLM calls fail")
+
+	rendered, cliState, err := orch.RunResearchDebate(context.Background(), state)
+	if err != nil {
+		t.Fatalf("RunResearchDebate failed: %v", err)
+	}
+	if cliState != cli.StateNeutral {
+		t.Fatalf("fallback Hold should be neutral, got %v", cliState)
+	}
+	if !strings.Contains(rendered, memory.HoldConst) {
+		t.Fatalf("expected Hold fallback in rendered plan: %q", rendered)
+	}
+	if !strings.Contains(rendered, "Fallback synthesis") {
+		t.Fatalf("expected fallback rationale: %q", rendered)
 	}
 }
 
-// Ensure stub types satisfy interfaces at compile time.
-var (
-	_ dataflow.DataProvider      = (*stubDataProvider)(nil)
-	_ dataflow.NewsSocialProvider = (*stubNewsSocial)(nil)
-	_ provider.LLMProvider       = (*failingLLM)(nil)
-)
+func TestRunResearchDebate_MaxDebateRounds(t *testing.T) {
+	mockLLM := &behavioralMockLLM{}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 2, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{
+		"Market": "m", "Sentiment": "s", "News": "n", "Fundamentals": "f",
+	}
+
+	_, _, err := orch.RunResearchDebate(context.Background(), state)
+	if err != nil {
+		t.Fatalf("RunResearchDebate failed: %v", err)
+	}
+
+	// 2 rounds => 2 bull + 2 bear Generate calls before manager structured call.
+	if mockLLM.generateCalls != 4 {
+		t.Fatalf("expected 4 generate calls for 2 debate rounds, got %d", mockLLM.generateCalls)
+	}
+	if mockLLM.structuredCalls != 1 {
+		t.Fatalf("expected 1 structured call, got %d", mockLLM.structuredCalls)
+	}
+
+	state.RLock()
+	count := state.InvestmentDebate.Count
+	state.RUnlock()
+	if count != 4 {
+		t.Fatalf("debate count = %d, want 4", count)
+	}
+}
+
+func TestRunRiskAndSizing_FullWorkflow(t *testing.T) {
+	mockLLM := &behavioralMockLLM{}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "market", "Fundamentals": "fundamentals"}
+	state.InvestmentPlan = "Buy AAPL"
+	state.Metadata["past_context"] = "Prior decision: Hold due to macro uncertainty."
+
+	rendered, cliState, err := orch.RunRiskAndSizing(context.Background(), state)
+	if err != nil {
+		t.Fatalf("RunRiskAndSizing failed: %v", err)
+	}
+	if cliState != cli.StateBullish {
+		t.Fatalf("cliState = %v, want bullish for Overweight", cliState)
+	}
+	if !strings.Contains(rendered, "**Rating**: Overweight") {
+		t.Fatalf("unexpected PM decision render: %q", rendered)
+	}
+
+	state.RLock()
+	defer state.RUnlock()
+
+	if state.TraderInvestmentPlan == "" {
+		t.Fatal("expected trader investment plan to be set")
+	}
+	if state.OptionsStrategy == "" {
+		t.Fatal("expected options strategy to be set")
+	}
+	if !strings.Contains(state.RiskDebate.History, "Aggressive Risk:") {
+		t.Fatal("expected aggressive risk in debate history")
+	}
+	if !strings.Contains(state.RiskDebate.History, "Conservative Risk:") {
+		t.Fatal("expected conservative risk in debate history")
+	}
+	if !strings.Contains(state.RiskDebate.History, "Neutral Risk:") {
+		t.Fatal("expected neutral risk in debate history")
+	}
+	if state.FinalTradeDecision != rendered {
+		t.Fatal("final trade decision should match rendered PM output")
+	}
+	if len(state.SignalLogs) != 1 {
+		t.Fatalf("expected 1 signal log entry, got %d", len(state.SignalLogs))
+	}
+	if state.SignalLogs[0].Action != "Overweight" {
+		t.Fatalf("signal action = %q", state.SignalLogs[0].Action)
+	}
+	if mockLLM.lastUserPrompt == "" || !strings.Contains(mockLLM.lastUserPrompt, "Prior decision: Hold") {
+		t.Fatal("PM prompt should include past_context from journal metadata")
+	}
+}
+
+func TestRunRiskAndSizing_StructuredFallbacks(t *testing.T) {
+	mockLLM := &behavioralMockLLM{structuredErr: errors.New("structured failure")}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "m", "Fundamentals": "f"}
+	state.InvestmentPlan = "Hold"
+
+	rendered, cliState, err := orch.RunRiskAndSizing(context.Background(), state)
+	if err != nil {
+		t.Fatalf("RunRiskAndSizing failed: %v", err)
+	}
+	if cliState != cli.StateNeutral {
+		t.Fatalf("fallback should be neutral, got %v", cliState)
+	}
+	if !strings.Contains(rendered, memory.HoldConst) {
+		t.Fatalf("expected Hold fallback in PM decision: %q", rendered)
+	}
+	if !strings.Contains(state.TraderInvestmentPlan, memory.HoldConst) {
+		t.Fatalf("expected Hold fallback trader proposal: %q", state.TraderInvestmentPlan)
+	}
+}
+
+func TestRunRiskAndSizing_MaxRiskDiscussRounds(t *testing.T) {
+	mockLLM := &behavioralMockLLM{}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 2)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "m", "Fundamentals": "f"}
+	state.InvestmentPlan = "Buy"
+
+	_, _, err := orch.RunRiskAndSizing(context.Background(), state)
+	if err != nil {
+		t.Fatalf("RunRiskAndSizing failed: %v", err)
+	}
+
+	state.RLock()
+	count := state.RiskDebate.Count
+	agg := len(state.AggressiveRiskHistory)
+	con := len(state.ConservativeRiskHistory)
+	neu := len(state.NeutralRiskHistory)
+	state.RUnlock()
+
+	if count != 6 {
+		t.Fatalf("risk debate count = %d, want 6 (3 roles x 2 rounds)", count)
+	}
+	if agg != 2 || con != 2 || neu != 2 {
+		t.Fatalf("history lengths agg=%d con=%d neu=%d, want 2 each", agg, con, neu)
+	}
+}
+
+func TestRunResearchDebate_BullFailure(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		roles: map[string]roleBehavior{
+			"bull": {err: errors.New("bull unavailable")},
+		},
+	}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "m", "Sentiment": "s", "News": "n", "Fundamentals": "f"}
+
+	_, _, err := orch.RunResearchDebate(context.Background(), state)
+	if err == nil || !strings.Contains(err.Error(), "bull analyst failed") {
+		t.Fatalf("expected bull failure, got: %v", err)
+	}
+}
+
+func TestNewTradingOrchestrator(t *testing.T) {
+	cfg := configWithDebateRounds(1, 1)
+	llm := provider.NewMockProvider("AAPL")
+	orch := NewTradingOrchestrator(cfg, nil, &mockDataProvider{}, llm, nil, &mockNewsSocialProvider{})
+	if orch == nil || orch.cfg != cfg || orch.llmProvider != llm {
+		t.Fatal("NewTradingOrchestrator did not wire dependencies")
+	}
+}
+
+func TestRunConcurrentAnalysts_OHLCVFailure(t *testing.T) {
+	data := &mockDataProvider{ohlcvErr: errors.New("no data")}
+	orch := newTestOrchestrator(&behavioralMockLLM{}, data, nil, 1, 1)
+	state := testTradingState()
+
+	_, err := orch.RunConcurrentAnalysts(context.Background(), state)
+	if err == nil || !strings.Contains(err.Error(), "failed to fetch OHLCV") {
+		t.Fatalf("expected OHLCV error, got: %v", err)
+	}
+}
+
+func TestRunConcurrentAnalysts_NewsFetchWarnings(t *testing.T) {
+	news := &mockNewsSocialProvider{
+		newsErr:       errors.New("news down"),
+		globalNewsErr: errors.New("global down"),
+		stocktwitsErr: errors.New("st down"),
+		redditErr:     errors.New("reddit down"),
+	}
+	orch := newTestOrchestrator(&behavioralMockLLM{}, nil, news, 1, 1)
+	state := testTradingState()
+
+	summary, err := orch.RunConcurrentAnalysts(context.Background(), state)
+	if err != nil {
+		t.Fatalf("news fetch warnings should not abort pipeline: %v", err)
+	}
+	if !strings.Contains(summary, "Completed successfully") {
+		t.Fatalf("expected successful analysts in summary: %q", summary)
+	}
+}
+
+func TestRunResearchDebate_BearishCLIState(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		structuredFill: func(_ provider.LLMRequest, target interface{}) error {
+			plan, ok := target.(*ResearchPlan)
+			if !ok {
+				t.Fatal("expected ResearchPlan target")
+			}
+			*plan = ResearchPlan{Recommendation: "Sell", Rationale: "Overvalued", StrategicActions: "Reduce exposure"}
+			return nil
+		},
+	}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "m", "Sentiment": "s", "News": "n", "Fundamentals": "f"}
+
+	_, cliState, err := orch.RunResearchDebate(context.Background(), state)
+	if err != nil {
+		t.Fatalf("RunResearchDebate failed: %v", err)
+	}
+	if cliState != cli.StateBearish {
+		t.Fatalf("cliState = %v, want bearish", cliState)
+	}
+}
+
+func TestRunRiskAndSizing_OptionsFailureFallback(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		roles: map[string]roleBehavior{
+			"options": {err: errors.New("options agent down")},
+		},
+	}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "m", "Fundamentals": "f"}
+	state.InvestmentPlan = "Buy"
+
+	_, _, err := orch.RunRiskAndSizing(context.Background(), state)
+	if err != nil {
+		t.Fatalf("options failure should not abort risk sizing: %v", err)
+	}
+
+	state.RLock()
+	opts := state.OptionsStrategy
+	state.RUnlock()
+	if !strings.Contains(opts, "Fallback options strategy") {
+		t.Fatalf("expected options fallback, got: %q", opts)
+	}
+}
+
+func TestRunRiskAndSizing_RiskAgentFailure(t *testing.T) {
+	mockLLM := &behavioralMockLLM{
+		roles: map[string]roleBehavior{
+			"aggressive": {err: errors.New("aggressive risk down")},
+		},
+	}
+	orch := newTestOrchestrator(mockLLM, nil, nil, 1, 1)
+	state := testTradingState()
+	state.AnalystReports = map[string]string{"Market": "m", "Fundamentals": "f"}
+	state.InvestmentPlan = "Buy"
+
+	_, _, err := orch.RunRiskAndSizing(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected aggressive risk failure to propagate")
+	}
+}
+
+func TestAddDebateMessage_WithExistingHistory(t *testing.T) {
+	state := &checkpoint.TradingState{
+		InvestmentDebate: InvestDebateState{History: "### Starting Debate Room\n"},
+	}
+	AddDebateMessage(state, "Bull Analyst", "opening")
+	state.RLock()
+	got := state.InvestmentDebate.History
+	state.RUnlock()
+	if !strings.Contains(got, "Bull Analyst: opening") {
+		t.Fatalf("history = %q", got)
+	}
+}
