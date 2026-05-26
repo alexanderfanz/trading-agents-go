@@ -22,9 +22,6 @@ linters-settings:
     enable-all: true
     disable:
       - fieldalignment # disable structure field alignment warning since memory footprint is small here
-  gosec:
-    excludes:
-      - G115 # Exclude safe integer conversions
   revive:
     rules:
       - name: exported
