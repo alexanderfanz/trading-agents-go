@@ -28,7 +28,7 @@ func ohlcvCacheFile(cacheDir, ticker string) string {
 
 func loadTestFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name))
+	data, err := os.ReadFile(filepath.Join("testdata", name)) // #nosec G304 -- test fixture path
 	if err != nil {
 		t.Fatalf("failed to read fixture %s: %v", name, err)
 	}
@@ -41,8 +41,11 @@ func newMockSessionManager(t *testing.T) (*YahooSessionManager, *httptest.Server
 		switch r.URL.Path {
 		case "/fc":
 			http.SetCookie(w, &http.Cookie{
-				Name:  mockCookieName,
-				Value: mockCookieValue,
+				Name:     mockCookieName,
+				Value:    mockCookieValue,
+				Secure:   true,
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
 			})
 			w.WriteHeader(http.StatusNotFound)
 		case "/getcrumb":
@@ -158,10 +161,10 @@ func TestFetchOHLCV_OnlineChartMock(t *testing.T) {
 	assertNoLookAhead(t, candles, tradeDate)
 
 	cacheFile := ohlcvCacheFile(cacheDir, "AAPL")
-	if _, err := os.Stat(cacheFile); err != nil {
-		t.Fatalf("expected CSV cache file written: %v", err)
+	if _, statErr := os.Stat(cacheFile); statErr != nil {
+		t.Fatalf("expected CSV cache file written: %v", statErr)
 	}
-	cacheData, err := os.ReadFile(cacheFile)
+	cacheData, err := os.ReadFile(cacheFile) // #nosec G304 -- cache under t.TempDir()
 	if err != nil {
 		t.Fatalf("failed to read cache: %v", err)
 	}
@@ -375,7 +378,7 @@ func TestFetchFundamentals_OnlineQuoteSummary(t *testing.T) {
 	}
 
 	cacheFile := filepath.Join(cacheDir, "AAPL-fundamentals.txt")
-	if _, err := os.Stat(cacheFile); err != nil {
+	if _, statErr := os.Stat(cacheFile); statErr != nil {
 		t.Fatalf("expected fundamentals cache written: %v", err)
 	}
 }
