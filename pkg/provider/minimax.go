@@ -54,7 +54,7 @@ func (m *MiniMaxRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 
 // NewMiniMaxAdapter creates a new MiniMax adapter.
 func NewMiniMaxAdapter(apiKey, baseURL, model string, debugDir string) *MiniMaxAdapter {
-	var baseTransport http.RoundTripper = http.DefaultTransport
+	baseTransport := http.RoundTripper(http.DefaultTransport)
 	if debugDir != "" {
 		if dt, err := NewDebugLoggingRoundTripper(http.DefaultTransport, debugDir); err == nil {
 			baseTransport = dt

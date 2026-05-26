@@ -208,8 +208,8 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 
 		if o.cfg.MemoryLogPath != "" {
 			log := memory.NewTradingMemoryLog(o.cfg.MemoryLogPath, o.cfg.MemoryLogMaxEntries)
-			pastContext, err := log.GetPastContext(ticker, 5, 3)
-			if err == nil && pastContext != "" {
+			pastContext, pastErr := log.GetPastContext(ticker, 5, 3)
+			if pastErr == nil && pastContext != "" {
 				state.Metadata["past_context"] = pastContext
 			}
 		}
@@ -506,7 +506,7 @@ func (o *TradingOrchestrator) computeAllIndicators(ctx context.Context, candles 
 func (o *TradingOrchestrator) runMarketAnalyst(ctx context.Context, state *checkpoint.TradingState, candles []dataflow.Candle, indicatorMap map[string]float64) (string, error) {
 	var indStr strings.Builder
 	for k, v := range indicatorMap {
-		indStr.WriteString(fmt.Sprintf("- %s: %.4f\n", k, v))
+		fmt.Fprintf(&indStr, "- %s: %.4f\n", k, v)
 	}
 
 	prompt := fmt.Sprintf(`Analyze the market indicators and historical prices for %s as of %s.

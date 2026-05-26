@@ -63,9 +63,9 @@ func TestGenerateLocalReports(t *testing.T) {
 
 	for _, ef := range expectedFiles {
 		filePath := filepath.Join(targetFolder, ef.subDir, ef.fileName)
-		info, err := os.Stat(filePath)
-		if err != nil {
-			t.Errorf("expected file to exist: %s, err: %v", filePath, err)
+		info, statErr := os.Stat(filePath)
+		if statErr != nil {
+			t.Errorf("expected file to exist: %s, err: %v", filePath, statErr)
 			continue
 		}
 		if info.IsDir() {
@@ -73,9 +73,9 @@ func TestGenerateLocalReports(t *testing.T) {
 		}
 
 		// Verify content
-		bytes, err := os.ReadFile(filePath)
-		if err != nil {
-			t.Errorf("failed to read file %s: %v", filePath, err)
+		bytes, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			t.Errorf("failed to read file %s: %v", filePath, readErr)
 			continue
 		}
 		gotContent := string(bytes)

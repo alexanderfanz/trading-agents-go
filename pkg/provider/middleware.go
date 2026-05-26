@@ -160,11 +160,12 @@ func (l *DebugLoggingRoundTripper) logTransaction(
 
 	provider := "unknown"
 	urlStr := req.URL.String()
-	if req.URL.Host == "api.openai.com" {
+	switch req.URL.Host {
+	case "api.openai.com":
 		provider = "openai"
-	} else if req.URL.Host == "generativelanguage.googleapis.com" {
+	case "generativelanguage.googleapis.com":
 		provider = "gemini"
-	} else if req.URL.Host == "api.anthropic.com" {
+	case "api.anthropic.com":
 		provider = "anthropic"
 	}
 

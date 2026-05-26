@@ -119,7 +119,7 @@ func ConvertTypeToSchema(t reflect.Type) *genai.Schema {
 	schema := &genai.Schema{}
 
 	// Handle pointer dereferencing
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		schema = ConvertTypeToSchema(t.Elem())
 		schema.Nullable = boolPtr(true)
 		return schema
@@ -170,7 +170,7 @@ func ConvertTypeToSchema(t reflect.Type) *genai.Schema {
 			schema.Properties[fieldName] = fieldSchema
 
 			// Required configuration: fields are required if they aren't pointers or omitempty
-			if !omitempty && field.Type.Kind() != reflect.Ptr {
+			if !omitempty && field.Type.Kind() != reflect.Pointer {
 				schema.Required = append(schema.Required, fieldName)
 			}
 		}
