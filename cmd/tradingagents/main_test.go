@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -82,15 +81,8 @@ func captureOutput(f func()) (string, string) {
 }
 
 func TestMainHelp(t *testing.T) {
-	// Reset flags to avoid contamination from test args
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"cmd", "-help"}
-
 	stdout, stderr := captureOutput(func() {
-		code := run()
+		code := run([]string{"-help"})
 		if code != 0 {
 			t.Errorf("expected exit code 0 for help, got %d", code)
 		}
@@ -103,24 +95,17 @@ func TestMainHelp(t *testing.T) {
 }
 
 func TestMainInvalidFlag(t *testing.T) {
-	// Reset flags
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"cmd", "-invalid-flag-name"}
-
-	// Capture outputs and prevent panics from flag errors (flag.ContinueOnError allows this)
+	var code int
 	stdout, stderr := captureOutput(func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Logf("recovered panic: %v", r)
-			}
-		}()
-		_ = run()
+		code = run([]string{"-invalid-flag-name"})
 	})
+	if code != 2 {
+		t.Errorf("expected exit code 2 for invalid flag, got %d", code)
+	}
+	if !strings.Contains(stderr, "flag provided but not defined") {
+		t.Errorf("expected invalid flag error in stderr, got: %s", stderr)
+	}
 	_ = stdout
-	_ = stderr
 }
 
 func TestMainWorkflow(t *testing.T) {
@@ -266,12 +251,7 @@ Free Cash Flow: 100000.00
 	http.DefaultTransport = mockRT
 	http.DefaultClient.Transport = mockRT
 
-	// Set CLI Arguments
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{
-		"cmd",
+	args := []string{
 		"-provider=mock",
 		"-ticker=AAPL",
 		"-trade-date=" + tradeDateStr,
@@ -286,7 +266,7 @@ Free Cash Flow: 100000.00
 
 	// Capture output and run workflow
 	stdout, stderr := captureOutput(func() {
-		code := run()
+		code := run(args)
 		if code != 0 {
 			t.Errorf("expected workflow run to succeed with 0, got %d", code)
 		}

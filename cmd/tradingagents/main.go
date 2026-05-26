@@ -24,42 +24,41 @@ import (
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:]))
 }
 
-func run() int {
+func run(args []string) int {
 	// 1. Load base configurations from environment
 	cfg := config.LoadConfig()
 
-	// Initialize flag.CommandLine to use ContinueOnError so custom error handling is reachable.
-	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	flags := flag.NewFlagSet("tradingagents", flag.ContinueOnError)
 
 	// 2. Define Command-Line Flags
-	ticker := flag.String("ticker", "AAPL", "Ticker symbol to analyze")
-	tradeDate := flag.String("trade-date", time.Now().Format("2006-01-02"), "Date of trade analysis (YYYY-MM-DD)")
-	providerFlag := flag.String("provider", cfg.LLMProvider, "LLM provider (openai, gemini, anthropic, mock)")
-	deepThinkLLM := flag.String("deep-think-llm", cfg.DeepThinkLLM, "LLM model for deep/logical reasoning")
-	quickThinkLLM := flag.String("quick-think-llm", cfg.QuickThinkLLM, "LLM model for quick sentiment/news analysis")
-	maxDebateRounds := flag.Int("max-debate-rounds", cfg.MaxDebateRounds, "Max turns for bull/bear research debate")
-	maxRiskRounds := flag.Int("max-risk-rounds", cfg.MaxRiskDiscussRounds, "Max turns for risk appetite debate")
-	checkpointEnabled := flag.Bool("enable-checkpoint", cfg.CheckpointEnabled, "Enable checkpointing of intermediate steps")
-	resultsDir := flag.String("results-dir", cfg.ResultsDir, "Directory to write results logs")
-	cacheDir := flag.String("cache-dir", cfg.DataCacheDir, "Directory to cache downloaded finance data")
-	memoryPath := flag.String("memory-path", cfg.MemoryLogPath, "Path to write cumulative decision memory md")
-	dbPath := flag.String("db-path", filepath.Join(config.GetDefaultHome(), "checkpoints.db"), "Path to sqlite checkpoints database")
-	timeoutFlag := flag.Int("timeout", cfg.ExecutionTimeout, "Master execution timeout boundary in seconds")
-	createLocalReports := flag.Bool("enable-local-reports", cfg.CreateLocalReports, "Enable report generation in local directory")
-	localReportsDir := flag.String("local-reports-dir", cfg.LocalReportsDir, "Directory to compile structured markdown reports")
-	help := flag.Bool("h", false, "Show help usage description")
-	flag.BoolVar(help, "help", false, "Show help usage description")
+	ticker := flags.String("ticker", "AAPL", "Ticker symbol to analyze")
+	tradeDate := flags.String("trade-date", time.Now().Format("2006-01-02"), "Date of trade analysis (YYYY-MM-DD)")
+	providerFlag := flags.String("provider", cfg.LLMProvider, "LLM provider (openai, gemini, anthropic, mock)")
+	deepThinkLLM := flags.String("deep-think-llm", cfg.DeepThinkLLM, "LLM model for deep/logical reasoning")
+	quickThinkLLM := flags.String("quick-think-llm", cfg.QuickThinkLLM, "LLM model for quick sentiment/news analysis")
+	maxDebateRounds := flags.Int("max-debate-rounds", cfg.MaxDebateRounds, "Max turns for bull/bear research debate")
+	maxRiskRounds := flags.Int("max-risk-rounds", cfg.MaxRiskDiscussRounds, "Max turns for risk appetite debate")
+	checkpointEnabled := flags.Bool("enable-checkpoint", cfg.CheckpointEnabled, "Enable checkpointing of intermediate steps")
+	resultsDir := flags.String("results-dir", cfg.ResultsDir, "Directory to write results logs")
+	cacheDir := flags.String("cache-dir", cfg.DataCacheDir, "Directory to cache downloaded finance data")
+	memoryPath := flags.String("memory-path", cfg.MemoryLogPath, "Path to write cumulative decision memory md")
+	dbPath := flags.String("db-path", filepath.Join(config.GetDefaultHome(), "checkpoints.db"), "Path to sqlite checkpoints database")
+	timeoutFlag := flags.Int("timeout", cfg.ExecutionTimeout, "Master execution timeout boundary in seconds")
+	createLocalReports := flags.Bool("enable-local-reports", cfg.CreateLocalReports, "Enable report generation in local directory")
+	localReportsDir := flags.String("local-reports-dir", cfg.LocalReportsDir, "Directory to compile structured markdown reports")
+	help := flags.Bool("h", false, "Show help usage description")
+	flags.BoolVar(help, "help", false, "Show help usage description")
 
-	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 
 	if *help {
 		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
-		flag.PrintDefaults()
+		flags.PrintDefaults()
 		return 0
 	}
 
@@ -136,7 +135,6 @@ func run() int {
 			}
 		}
 	}
-
 
 	// 6. Ensure Parent Database Folders Exist
 	_ = os.MkdirAll(filepath.Dir(*dbPath), 0750)
