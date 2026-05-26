@@ -1,3 +1,5 @@
+<!-- DONE -->
+
 ![medium](https://www.gstatic.com/codereviewagent/medium-priority.svg)
 
 in `internal/indicators/indicators_test.go`
