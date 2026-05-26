@@ -34,14 +34,6 @@ jobs:
         with:
           version: latest
 
-      - name: Install Semantic Release Plugins
-        run: |
-          pnpm add -g semantic-release \
-            @semantic-release/commit-analyzer \
-            @semantic-release/release-notes-generator \
-            @semantic-release/exec \
-            @semantic-release/github
-
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -51,4 +43,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          semantic-release
+          pnpm dlx \
+            --package=semantic-release \
+            --package=@semantic-release/commit-analyzer \
+            --package=@semantic-release/release-notes-generator \
+            --package=@semantic-release/exec \
+            --package=@semantic-release/github \
+            semantic-release
