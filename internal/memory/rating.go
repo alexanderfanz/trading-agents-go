@@ -5,13 +5,16 @@ import (
 	"strings"
 )
 
+// HoldConst represents the default Hold rating.
+const HoldConst = "Hold"
+
 // Ratings5Tier represents the canonical, ordered 5-tier scale.
-var Ratings5Tier = []string{"Buy", "Overweight", "Hold", "Underweight", "Sell"}
+var Ratings5Tier = []string{"Buy", "Overweight", HoldConst, "Underweight", "Sell"}
 
 var ratingsSet = map[string]string{
 	"buy":         "Buy",
 	"overweight":  "Overweight",
-	"hold":        "Hold",
+	"hold":        HoldConst,
 	"underweight": "Underweight",
 	"sell":        "Sell",
 }
@@ -27,7 +30,7 @@ var ratingLabelRe = regexp.MustCompile(`(?i)rating.*?[:\-][\s*]*(\w+)`)
 //
 // Returns a Title-cased rating string, or default "Hold" if no rating word appears.
 func ParseRating(text string, defaultVal ...string) string {
-	dVal := "Hold"
+	dVal := HoldConst
 	if len(defaultVal) > 0 {
 		dVal = defaultVal[0]
 	}

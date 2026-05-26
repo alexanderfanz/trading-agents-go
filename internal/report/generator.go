@@ -52,7 +52,7 @@ func GenerateLocalReports(data *ReportData, baseDir string) error {
 
 	// Create directories
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
@@ -63,7 +63,7 @@ func GenerateLocalReports(data *ReportData, baseDir string) error {
 		if content == "" {
 			content = "_No content was recorded for this section._"
 		}
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
 			return fmt.Errorf("failed to write file %s: %w", filePath, err)
 		}
 		return nil
@@ -117,7 +117,7 @@ func GenerateLocalReports(data *ReportData, baseDir string) error {
 	// Assemble consolidated report
 	completeReportContent := assembleCompleteReport(data)
 	completeReportPath := filepath.Join(targetDir, "complete_report.md")
-	if err := os.WriteFile(completeReportPath, []byte(completeReportContent), 0644); err != nil {
+	if err := os.WriteFile(completeReportPath, []byte(completeReportContent), 0600); err != nil {
 		return fmt.Errorf("failed to write complete report: %w", err)
 	}
 

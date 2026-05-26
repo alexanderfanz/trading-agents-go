@@ -73,6 +73,7 @@ func TestGenerateLocalReports(t *testing.T) {
 		}
 
 		// Verify content
+		// #nosec G304
 		bytes, readErr := os.ReadFile(filePath)
 		if readErr != nil {
 			t.Errorf("failed to read file %s: %v", filePath, readErr)
@@ -86,6 +87,7 @@ func TestGenerateLocalReports(t *testing.T) {
 
 	// 5. Assert complete_report.md exists and has the unified content structure
 	completeReportPath := filepath.Join(targetFolder, "complete_report.md")
+	// #nosec G304
 	bytes, err := os.ReadFile(completeReportPath)
 	if err != nil {
 		t.Fatalf("failed to read complete report: %v", err)
@@ -140,6 +142,7 @@ func TestGenerateLocalReportsEmpty(t *testing.T) {
 
 	// Verify fallback handling for empty fields
 	marketPath := filepath.Join(tempDir, "AAPL_20260525_154100", "1_analysts", "market.md")
+	// #nosec G304
 	bytes, err := os.ReadFile(marketPath)
 	if err != nil {
 		t.Fatalf("failed to read market.md: %v", err)

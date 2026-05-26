@@ -52,7 +52,7 @@ func TestJournalParsingAndStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "test_memory.md")
 	log := NewTradingMemoryLog(logFile, 0)
@@ -98,7 +98,7 @@ func TestPastContextRetrieval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "test_memory.md")
 	log := NewTradingMemoryLog(logFile, 0)
@@ -143,7 +143,7 @@ func TestJournalRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "test_memory.md")
 	// Cap resolved entries at 2
@@ -180,7 +180,7 @@ func TestOutcomeResolutionPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "test_memory.md")
 	log := NewTradingMemoryLog(logFile, 0)
@@ -251,7 +251,7 @@ func TestConcurrentJournalAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "test_memory.md")
 	log := NewTradingMemoryLog(logFile, 0)

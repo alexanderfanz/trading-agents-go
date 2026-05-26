@@ -670,7 +670,7 @@ Debate History:
 	err := managerAgent.CallStructured(ctx, managerPrompt, &plan)
 	if err != nil {
 		plan = ResearchPlan{
-			Recommendation: "Hold",
+			Recommendation: memory.HoldConst,
 			Rationale:      "Fallback synthesis due to formatting issue.",
 			StrategicActions: "Maintain current posture.",
 		}
@@ -719,7 +719,7 @@ Fundamentals: %s`, state.Ticker, planText, market, fundamentals)
 	err := traderAgent.CallStructured(ctx, traderPrompt, &proposal)
 	if err != nil {
 		proposal = TraderProposal{
-			Action:    "Hold",
+			Action:    memory.HoldConst,
 			Reasoning: "Fallback trader proposal due to call issues.",
 		}
 	}
@@ -825,7 +825,7 @@ Trader Proposal:
 	err = pmAgent.CallStructured(ctx, pmPrompt, &decision)
 	if err != nil {
 		decision = PortfolioDecision{
-			Rating:           "Hold",
+			Rating:           memory.HoldConst,
 			ExecutiveSummary: "Fallback decision due to unmarshaling failure.",
 			InvestmentThesis: "Strict risk controls applied.",
 		}
