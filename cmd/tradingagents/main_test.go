@@ -186,9 +186,8 @@ Free Cash Flow: 100000.00
 		t.Fatalf("invalid trade date: %v", err)
 	}
 
-	today := time.Now()
-	start5Y := today.AddDate(-5, 0, 0)
-	cacheFileName := fmt.Sprintf("AAPL-YFin-data-%s-%s.csv", start5Y.Format("2006-01-02"), today.Format("2006-01-02"))
+	start5Y := tradeDate.AddDate(-5, 0, 0)
+	cacheFileName := fmt.Sprintf("AAPL-YFin-data-%s-%s.csv", start5Y.Format("2006-01-02"), tradeDate.Format("2006-01-02"))
 	cacheFilePath := filepath.Join(cacheDir, cacheFileName)
 
 	var csvContent strings.Builder
