@@ -176,7 +176,7 @@ func runForm(values *formValues) error {
 
 func modelFieldForProvider(provider string, category modelCategory, value *string) huh.Field {
 	label := modelCategoryLabel(category)
-	options := modelOptionsForProvider(provider, category)
+	options := modelOptionsForProviderWithCurrent(provider, category, *value)
 	if len(options) > 0 {
 		return huh.NewSelect[string]().
 			Title(label).
@@ -191,6 +191,21 @@ func modelFieldForProvider(provider string, category modelCategory, value *strin
 		Description("Enter custom model ID for " + strings.ToLower(strings.TrimSpace(provider))).
 		Value(value).
 		Validate(validateRequired(strings.ToLower(label)))
+}
+
+func modelOptionsForProviderWithCurrent(provider string, category modelCategory, current string) []huh.Option[string] {
+	options := modelOptionsForProvider(provider, category)
+	if len(options) == 0 || current == "" {
+		return options
+	}
+
+	for _, option := range options {
+		if option.Value == current {
+			return options
+		}
+	}
+
+	return append([]huh.Option[string]{huh.NewOption(current+" (current)", current)}, options...)
 }
 
 func modelCategoryLabel(category modelCategory) string {

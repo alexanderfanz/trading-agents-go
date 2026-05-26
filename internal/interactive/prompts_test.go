@@ -214,6 +214,34 @@ func TestModelOptionsForProvider(t *testing.T) {
 	}
 }
 
+func TestModelOptionsForProviderWithCurrentIncludesCustomModel(t *testing.T) {
+	current := "custom-gemini-model"
+	options := modelOptionsForProviderWithCurrent(providerGemini, modelCategoryQuick, current)
+
+	if len(options) == 0 {
+		t.Fatal("expected options for curated provider")
+	}
+	if options[0].Value != current {
+		t.Fatalf("expected current model to be first option, got %s", options[0].Value)
+	}
+	if options[0].Key != current+" (current)" {
+		t.Fatalf("expected current model label, got %s", options[0].Key)
+	}
+}
+
+func TestModelOptionsForProviderWithCurrentDoesNotDuplicateCuratedModel(t *testing.T) {
+	defaults := defaultModelsForProvider(providerGemini)
+	options := modelOptionsForProviderWithCurrent(providerGemini, modelCategoryQuick, defaults.quick)
+	baseOptions := modelOptionsForProvider(providerGemini, modelCategoryQuick)
+
+	if len(options) != len(baseOptions) {
+		t.Fatalf("expected curated current model not to be duplicated, got %d options instead of %d", len(options), len(baseOptions))
+	}
+	if options[0].Value != defaults.quick {
+		t.Fatalf("expected first option to remain provider default %s, got %s", defaults.quick, options[0].Value)
+	}
+}
+
 func TestModelFieldForProviderUsesSelectForCuratedModels(t *testing.T) {
 	value := "old-model"
 	field := modelFieldForProvider(providerGemini, modelCategoryQuick, &value)
