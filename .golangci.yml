@@ -1,0 +1,36 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck      # checks for unchecked errors
+    - govet         # standard go vet checks
+    - staticcheck   # comprehensive correctness, styling, and performance checks
+    - unused        # checks for unused code
+    - gosec         # checks for security violations
+    - revive        # fast and extensible style linter
+    - stylecheck    # code style checker
+    - gocritic      # performance and bug diagnostics
+    - goconst       # finds repeated strings that could be constants
+    - bodyclose     # checks for unclosed HTTP response bodies (prevents connection leaks)
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # disable structure field alignment warning since memory footprint is small here
+  gosec:
+    excludes:
+      - G115 # Exclude safe integer conversions
+  revive:
+    rules:
+      - name: exported
+        disabled: true # disable mandatory comments on exported items to keep it simple
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
