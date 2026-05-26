@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"trading-agents-go/internal/app"
 	"trading-agents-go/internal/cli"
 	"trading-agents-go/internal/config"
@@ -74,12 +76,7 @@ func stdoutSupportsColor() bool {
 		return false
 	}
 
-	info, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-
-	return info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 func run(args []string) int {

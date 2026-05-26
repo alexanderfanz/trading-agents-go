@@ -69,6 +69,9 @@ func TestNewFormValuesUsesDefaults(t *testing.T) {
 
 	values := newFormValues(cfg, defaults)
 
+	if values.initialProvider != values.provider {
+		t.Fatalf("expected initial provider to match provider, got %s/%s", values.initialProvider, values.provider)
+	}
 	if values.ticker != "SPY" {
 		t.Fatalf("expected ticker SPY, got %s", values.ticker)
 	}
@@ -138,6 +141,36 @@ func TestApplyModelDefaultsForProvider(t *testing.T) {
 	})
 }
 
+func TestApplyModelDefaultsForProviderPreservesConfiguredModelsWhenProviderUnchanged(t *testing.T) {
+	values := &formValues{
+		initialProvider: "openai",
+		provider:        "openai",
+		quickThinkLLM:   "custom-quick",
+		deepThinkLLM:    "custom-deep",
+	}
+
+	values.applyModelDefaultsForProvider()
+
+	if values.quickThinkLLM != "custom-quick" || values.deepThinkLLM != "custom-deep" {
+		t.Fatalf("expected unchanged provider to preserve configured models, got %s/%s", values.quickThinkLLM, values.deepThinkLLM)
+	}
+}
+
+func TestApplyModelDefaultsForProviderUpdatesModelsWhenProviderChanges(t *testing.T) {
+	values := &formValues{
+		initialProvider: "openai",
+		provider:        "gemini",
+		quickThinkLLM:   "custom-quick",
+		deepThinkLLM:    "custom-deep",
+	}
+
+	values.applyModelDefaultsForProvider()
+
+	if values.quickThinkLLM != "gemini-3.5-flash" || values.deepThinkLLM != "gemini-3.1-pro-preview" {
+		t.Fatalf("expected changed provider to use gemini defaults, got %s/%s", values.quickThinkLLM, values.deepThinkLLM)
+	}
+}
+
 func TestModelOptionsForProvider(t *testing.T) {
 	for _, providerOption := range providerOptions() {
 		quickOptions := modelOptionsForProvider(providerOption.Value, modelCategoryQuick)
@@ -204,6 +237,21 @@ func TestApplyToRejectsInvalidValues(t *testing.T) {
 				t.Fatal("expected applyTo to reject invalid values")
 			}
 		})
+	}
+}
+
+func TestValidateLocalReportsDir(t *testing.T) {
+	values := &formValues{createLocalReports: false}
+	if err := values.validateLocalReportsDir(" "); err != nil {
+		t.Fatalf("expected empty local reports dir to pass when reports disabled: %v", err)
+	}
+
+	values.createLocalReports = true
+	if err := values.validateLocalReportsDir("reports"); err != nil {
+		t.Fatalf("expected local reports dir to pass when reports enabled: %v", err)
+	}
+	if err := values.validateLocalReportsDir(" "); err == nil {
+		t.Fatal("expected empty local reports dir to fail when reports enabled")
 	}
 }
 

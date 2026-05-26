@@ -55,6 +55,7 @@ func PromptForRunOptions(cfg *config.Config, defaults app.RunOptions) (app.RunOp
 }
 
 type formValues struct {
+	initialProvider    string
 	ticker             string
 	tradeDate          string
 	outputLanguage     string
@@ -73,11 +74,13 @@ type formValues struct {
 }
 
 func newFormValues(cfg *config.Config, defaults app.RunOptions) *formValues {
+	provider := strings.ToLower(defaultString(cfg.LLMProvider, "openai"))
 	return &formValues{
+		initialProvider:    provider,
 		ticker:             strings.ToUpper(defaultString(defaults.Ticker, "AAPL")),
 		tradeDate:          defaultString(defaults.TradeDate, time.Now().Format("2006-01-02")),
 		outputLanguage:     defaultString(cfg.OutputLanguage, "English"),
-		provider:           strings.ToLower(defaultString(cfg.LLMProvider, "openai")),
+		provider:           provider,
 		quickThinkLLM:      cfg.QuickThinkLLM,
 		deepThinkLLM:       cfg.DeepThinkLLM,
 		researchDepth:      max(cfg.MaxDebateRounds, cfg.MaxRiskDiscussRounds),
@@ -152,7 +155,7 @@ func runForm(values *formValues) error {
 			huh.NewInput().
 				Title("Local reports directory").
 				Value(&values.localReportsDir).
-				Validate(validateRequired("local reports directory")),
+				Validate(values.validateLocalReportsDir),
 		).Title("Models And Output"),
 		huh.NewGroup(
 			huh.NewInput().
@@ -180,6 +183,10 @@ func runForm(values *formValues) error {
 }
 
 func (v *formValues) applyModelDefaultsForProvider() {
+	if v.initialProvider != "" && v.provider == v.initialProvider && v.quickThinkLLM != "" && v.deepThinkLLM != "" {
+		return
+	}
+
 	modelDefaults := defaultModelsForProvider(v.provider)
 	if modelDefaults.quick != "" {
 		v.quickThinkLLM = modelDefaults.quick
@@ -187,6 +194,13 @@ func (v *formValues) applyModelDefaultsForProvider() {
 	if modelDefaults.deep != "" {
 		v.deepThinkLLM = modelDefaults.deep
 	}
+}
+
+func (v *formValues) validateLocalReportsDir(value string) error {
+	if v.createLocalReports && strings.TrimSpace(value) == "" {
+		return fmt.Errorf("local reports directory is required")
+	}
+	return nil
 }
 
 func (v *formValues) applyTo(cfg *config.Config) (app.RunOptions, error) {
@@ -491,11 +505,14 @@ func validateTicker(value string) error {
 }
 
 func validateTradeDate(value string) error {
-	date, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+	trimmed := strings.TrimSpace(value)
+	_, err := time.Parse("2006-01-02", trimmed)
 	if err != nil {
 		return fmt.Errorf("date must use YYYY-MM-DD")
 	}
-	if date.After(time.Now()) {
+
+	today := time.Now().Format("2006-01-02")
+	if trimmed > today {
 		return fmt.Errorf("analysis date cannot be in the future")
 	}
 	return nil
