@@ -1,5 +1,9 @@
 .PHONY: all fmt lint vet test test-race build clean coverage coverage-html
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)
+
 # Default target runs all major quality checks, tests, and compiles the binary
 all: fmt vet test build
 
@@ -37,7 +41,7 @@ coverage-html: coverage
 
 # Compile the highly optimized Go orchestrator binary
 build:
-	go build -ldflags="-s -w" -trimpath -o tradingagents cmd/tradingagents/main.go
+	go build -ldflags="$(LDFLAGS)" -trimpath -o tradingagents cmd/tradingagents/main.go
 
 # Clean compiled binaries
 clean:
