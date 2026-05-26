@@ -31,6 +31,9 @@ func run() int {
 	// 1. Load base configurations from environment
 	cfg := config.LoadConfig()
 
+	// Initialize flag.CommandLine to use ContinueOnError so custom error handling is reachable.
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+
 	// 2. Define Command-Line Flags
 	ticker := flag.String("ticker", "AAPL", "Ticker symbol to analyze")
 	tradeDate := flag.String("trade-date", time.Now().Format("2006-01-02"), "Date of trade analysis (YYYY-MM-DD)")
@@ -50,7 +53,9 @@ func run() int {
 	help := flag.Bool("h", false, "Show help usage description")
 	flag.BoolVar(help, "help", false, "Show help usage description")
 
-	flag.Parse()
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		return 2
+	}
 
 	if *help {
 		fmt.Println("TradingAgents Go Orchestrator - Usage Guide")
