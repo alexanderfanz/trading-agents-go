@@ -6,7 +6,8 @@ before:
     - go mod tidy
 
 builds:
-  - env:
+  - main: ./cmd/tradingagents
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -17,10 +18,10 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats: ["tar.gz"]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]
 
 changelog:
   disable: true # Let semantic-release handle the changelog/release notes generation instead
