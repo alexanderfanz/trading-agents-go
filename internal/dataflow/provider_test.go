@@ -586,7 +586,10 @@ func TestResilientClientContextCancel(t *testing.T) {
 	cancel()
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com", nil)
-	_, err := client.Do(req)
+	resp, err := client.Do(req)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err == nil {
 		t.Fatal("expected context cancellation error")
 	}
