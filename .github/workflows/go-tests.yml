@@ -58,5 +58,13 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run Tests with Race Detection
-        run: go test -race -v ./...
+      - name: Run Tests with Coverage and Race Detection
+        run: go test -race -coverprofile=coverage.out -covermode=atomic -v ./...
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          fail_ci_if_error: false
+

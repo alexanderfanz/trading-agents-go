@@ -26,6 +26,12 @@ test:
 test-race:
 	go test -race -v ./...
 
+# Run unit tests with coverage profile and open html report in browser
+coverage:
+	go test -coverprofile=coverage.out -covermode=atomic ./...
+	go tool cover -html=coverage.out
+
+
 # Compile the highly optimized Go orchestrator binary
 build:
 	go build -ldflags="-s -w" -trimpath -o tradingagents cmd/tradingagents/main.go

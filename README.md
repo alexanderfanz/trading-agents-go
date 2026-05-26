@@ -1,6 +1,9 @@
 # TradingAgents: High-Performance Go Orchestrator
 
+[![codecov](https://codecov.io/gh/alexanderfanz/trading-agents-go/branch/main/graph/badge.svg)](https://codecov.io/gh/alexanderfanz/trading-agents-go)
+
 This repository is a high-performance Go port and direct migration of the sibling Python [TradingAgents](https://github.com/TauricResearch/TradingAgents) framework. It completely replaces heavy graph framework overheads with native Go concurrency pipelines, provides zero-allocation financial indicators, and features a premium command-line interface built with HSL-harmonized Lipgloss tokens.
+
 
 ---
 
