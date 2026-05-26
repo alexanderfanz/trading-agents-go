@@ -376,7 +376,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 			t.Fatalf("Resolve boll failed: %v", err)
 		}
 		if math.Abs(val-141.5) > 1e-9 {
-			t.Errorf("Expected boll to be 141.5, got %f", val)
+			t.Errorf("Expected boll to be 141.5, got %g", val)
 		}
 	})
 	t.Run("boll_ub", func(t *testing.T) {
@@ -387,7 +387,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 		}
 		expected := 141.5 + 2.0*math.Sqrt(33.25)
 		if math.Abs(val-expected) > 1e-9 {
-			t.Errorf("Expected boll_ub to be %f, got %f", expected, val)
+			t.Errorf("Expected boll_ub to be %g, got %g", expected, val)
 		}
 	})
 	t.Run("boll_lb", func(t *testing.T) {
@@ -398,7 +398,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 		}
 		expected := 141.5 - 2.0*math.Sqrt(33.25)
 		if math.Abs(val-expected) > 1e-9 {
-			t.Errorf("Expected boll_lb to be %f, got %f", expected, val)
+			t.Errorf("Expected boll_lb to be %g, got %g", expected, val)
 		}
 	})
 
@@ -458,7 +458,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 			t.Fatalf("Resolve mfi failed: %v", err)
 		}
 		if math.Abs(valMFI-100.0) > 1e-9 {
-			t.Errorf("Expected MFI to be 100.0, got %f", valMFI)
+			t.Errorf("Expected MFI to be 100.0, got %g", valMFI)
 		}
 	})
 
@@ -487,7 +487,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 			t.Fatalf("Resolve close_3_ema failed: %v", err)
 		}
 		if math.Abs(val-150.0) > 1e-9 {
-			t.Errorf("Expected close_3_ema to be 150.0, got %f", val)
+			t.Errorf("Expected close_3_ema to be 150.0, got %g", val)
 		}
 	})
 
@@ -499,7 +499,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 			t.Fatalf("Resolve close_3_rsi failed: %v", err)
 		}
 		if math.Abs(val-100.0) > 1e-9 {
-			t.Errorf("Expected close_3_rsi to be 100.0, got %f", val)
+			t.Errorf("Expected close_3_rsi to be 100.0, got %g", val)
 		}
 	})
 
