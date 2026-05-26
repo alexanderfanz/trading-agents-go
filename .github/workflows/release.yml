@@ -29,9 +29,14 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: latest
+
       - name: Install Semantic Release Plugins
         run: |
-          npm install -g semantic-release \
+          pnpm add -g semantic-release \
             @semantic-release/commit-analyzer \
             @semantic-release/release-notes-generator \
             @semantic-release/exec \
