@@ -474,7 +474,7 @@ func TestDynamicIndicatorResolver(t *testing.T) {
 	t.Run("Dynamic SMA", func(t *testing.T) {
 		resolver := newResolver()
 		valDynSMA, err := resolver.Resolve(context.Background(), candles, "TEST", "close_3_sma", tradeDate)
-		if err != nil || valDynSMA != 150.0 { // last 3 closes: 102+47=149, 102+48=150, 102+49=151 => avg = 150
+		if err != nil || math.Abs(valDynSMA-150.0) > 1e-9 { // last 3 closes: 102+47=149, 102+48=150, 102+49=151 => avg = 150
 			t.Fatalf("Resolve close_3_sma failed: got %f, err: %v", valDynSMA, err)
 		}
 	})
