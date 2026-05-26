@@ -265,9 +265,10 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 	}
 
 	// 5. Phase E: Finalization & Cleanup
+	var reportData *report.ReportData
 	state.RLock()
 	if o.cfg.CreateLocalReports {
-		reportData := &report.ReportData{
+		reportData = &report.ReportData{
 			Ticker:             ticker,
 			TradeDate:          tradeDate,
 			Timestamp:          time.Now(),
@@ -284,10 +285,13 @@ func (o *TradingOrchestrator) Execute(ctx context.Context, ticker string, tradeD
 			NeutralRisk:        strings.Join(state.NeutralRiskHistory, "\n\n---\n\n"),
 			FinalDecision:      state.FinalTradeDecision,
 		}
-		state.RUnlock()
-		_ = report.GenerateLocalReports(reportData, o.cfg.LocalReportsDir)
-	} else {
-		state.RUnlock()
+	}
+	state.RUnlock()
+
+	if reportData != nil {
+		if err := report.GenerateLocalReports(reportData, o.cfg.LocalReportsDir); err != nil {
+			fmt.Printf("[WARNING] Failed to generate local reports: %v\n", err)
+		}
 	}
 
 	if err := o.checkpointer.Clear(ctx, ticker, tradeDate); err != nil {
