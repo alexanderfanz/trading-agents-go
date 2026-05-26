@@ -51,8 +51,12 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 	}
 
 	for k, v := range envs {
-		os.Setenv(k, v)
-		defer os.Unsetenv(k)
+		if err := os.Setenv(k, v); err != nil {
+			t.Fatalf("failed to set env %s: %v", k, err)
+		}
+		defer func(key string) {
+			_ = os.Unsetenv(key)
+		}(k)
 	}
 
 	providers := []struct {
@@ -91,8 +95,7 @@ func TestNewLLMProvider_AllProviders(t *testing.T) {
 }
 
 func TestOllama_BaseURLOverride(t *testing.T) {
-	// 1. Default Ollama Base URL
-	os.Unsetenv("OLLAMA_BASE_URL")
+	_ = os.Unsetenv("OLLAMA_BASE_URL")
 	p, err := NewLLMProvider(providerOllama, "qwen3:latest", "", "")
 	if err != nil {
 		t.Fatalf("failed to create Ollama: %v", err)
@@ -106,9 +109,12 @@ func TestOllama_BaseURLOverride(t *testing.T) {
 		t.Fatal("expected ollama to be non-nil")
 	}
 
-	// 2. Env Override
-	os.Setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1")
-	defer os.Unsetenv("OLLAMA_BASE_URL")
+	if setErr := os.Setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1"); setErr != nil {
+		t.Fatalf("failed to set env: %v", setErr)
+	}
+	defer func() {
+		_ = os.Unsetenv("OLLAMA_BASE_URL")
+	}()
 	p2, err := NewLLMProvider(providerOllama, "qwen3:latest", "", "")
 	if err != nil {
 		t.Fatalf("failed to create overridden Ollama: %v", err)
@@ -161,7 +167,7 @@ func TestMiniMaxRoundTripper(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed RoundTrip: %v", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			var payload map[string]interface{}
 			err = json.Unmarshal(mock.requestBody, &payload)

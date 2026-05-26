@@ -74,7 +74,7 @@ type DebugLoggingRoundTripper struct {
 
 // NewDebugLoggingRoundTripper creates a logging interceptor and prepares the debug subdirectory.
 func NewDebugLoggingRoundTripper(proxied http.RoundTripper, debugDir string) (*DebugLoggingRoundTripper, error) {
-	if err := os.MkdirAll(debugDir, 0755); err != nil {
+	if err := os.MkdirAll(debugDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create logging directory: %w", err)
 	}
 	if proxied == nil {
@@ -196,7 +196,7 @@ func (l *DebugLoggingRoundTripper) logTransaction(
 	filename := fmt.Sprintf("%s_%d_%08x.json", provider, time.Now().UnixMilli(), uuid)
 	filePath := filepath.Join(l.DebugDir, filename)
 
-	_ = os.WriteFile(filePath, logBytes, 0644)
+	_ = os.WriteFile(filePath, logBytes, 0600)
 }
 
 func (l *DebugLoggingRoundTripper) extractTokenMetrics(provider string, body []byte) *TokenUsage {

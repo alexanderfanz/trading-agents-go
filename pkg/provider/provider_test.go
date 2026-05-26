@@ -161,7 +161,9 @@ func TestDebugLoggingRoundTripper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	mockRespBody := `{"usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20}}`
 	mock := &mockRoundTripper{
@@ -216,8 +218,8 @@ func TestDebugLoggingRoundTripper(t *testing.T) {
 	}
 
 	// Read and verify log payload
-	logFilePath := filepath.Join(tempDir, files[0].Name())
-	logData, err := os.ReadFile(logFilePath)
+	logFilePath := filepath.Clean(filepath.Join(tempDir, files[0].Name()))
+	logData, err := os.ReadFile(logFilePath) // #nosec G304
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
 	}
