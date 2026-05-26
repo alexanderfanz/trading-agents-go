@@ -148,21 +148,10 @@ func TestApplyModelDefaultsForProvider(t *testing.T) {
 	})
 }
 
-func TestDefaultModelsForProviderHandlesEmptyCatalogs(t *testing.T) {
-	const providerEmptyCatalog = "empty-catalog"
-	oldCatalog, hadOldCatalog := modelCatalogByProvider[providerEmptyCatalog]
-	modelCatalogByProvider[providerEmptyCatalog] = providerModelCatalog{}
-	t.Cleanup(func() {
-		if hadOldCatalog {
-			modelCatalogByProvider[providerEmptyCatalog] = oldCatalog
-			return
-		}
-		delete(modelCatalogByProvider, providerEmptyCatalog)
-	})
-
-	defaults := defaultModelsForProvider(providerEmptyCatalog)
+func TestDefaultModelsForProviderHandlesUnknownProvider(t *testing.T) {
+	defaults := defaultModelsForProvider("non-existent-provider")
 	if defaults.quick != "" || defaults.deep != "" {
-		t.Fatalf("expected empty catalog to return empty defaults, got %s/%s", defaults.quick, defaults.deep)
+		t.Fatalf("expected unknown provider to return empty defaults, got %s/%s", defaults.quick, defaults.deep)
 	}
 }
 
