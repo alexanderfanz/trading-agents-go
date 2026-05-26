@@ -35,6 +35,7 @@ func setTestHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	return home
 }
 
@@ -55,6 +56,9 @@ func TestGetDefaultHome(t *testing.T) {
 
 func TestGetDefaultHomeFallback(t *testing.T) {
 	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
 
 	got := GetDefaultHome()
 	want := filepath.Join(".", ".tradingagentsgo")
