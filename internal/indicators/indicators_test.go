@@ -84,14 +84,14 @@ func TestRSI(t *testing.T) {
 		}
 	}
 
-	// Flat prices should result in RSI of 0 or close to 50 if zero losses/gains
+	// Flat prices result in an RSI of 100 in this implementation because avgLoss is 0.
 	flat := []float64{10, 10, 10, 10, 10}
 	flatOut := make([]float64, len(flat))
 	err = RSI(flat, 3, flatOut)
 	if err != nil {
 		t.Fatalf("RSI failed: %v", err)
 	}
-	if flatOut[3] != 100 { // since avgLoss is 0, out[period] should be 100 as per logic in math.go
+	if flatOut[3] != 100 {
 		t.Errorf("Expected flat RSI to be 100, got %f", flatOut[3])
 	}
 
@@ -230,6 +230,15 @@ func TestATR(t *testing.T) {
 		t.Fatalf("ATR failed: %v", err)
 	}
 
+	// Since high - low is always 5 and previous close is within range, TR is always 5.
+	// Thus, ATR should be exactly 5.0.
+	expectedATR := 5.0
+	for i := 14; i < n; i++ {
+		if math.Abs(out[i]-expectedATR) > 1e-9 {
+			t.Errorf("Index %d: expected ATR %f, got %f", i, expectedATR, out[i])
+		}
+	}
+
 	// Insufficient data
 	if err := ATR(high[:10], low[:10], close[:10], 14, trBuf[:10], out[:10]); err == nil {
 		t.Error("expected error for ATR with short data")
@@ -268,10 +277,26 @@ func TestBollingerBands(t *testing.T) {
 		t.Fatalf("BollingerBands failed: %v", err)
 	}
 
-	// Verify upper is always greater than or equal to lower
+	// Verify upper is always greater than or equal to lower and assert exact values.
+	// Since the input prices repeat [100, 101, 102, 103, 104] every 5 elements,
+	// any window of 20 elements has a constant mean of 102.0 and variance of 2.0.
+	expectedMid := 102.0
+	expectedStdDev := math.Sqrt(2.0)
+	expectedUpper := expectedMid + 2.0*expectedStdDev
+	expectedLower := expectedMid - 2.0*expectedStdDev
+
 	for i := 19; i < n; i++ {
 		if upper[i] < lower[i] {
 			t.Errorf("Index %d: Upper band %f less than Lower band %f", i, upper[i], lower[i])
+		}
+		if math.Abs(mid[i]-expectedMid) > 1e-9 {
+			t.Errorf("Index %d: expected mid %f, got %f", i, expectedMid, mid[i])
+		}
+		if math.Abs(upper[i]-expectedUpper) > 1e-9 {
+			t.Errorf("Index %d: expected upper %f, got %f", i, expectedUpper, upper[i])
+		}
+		if math.Abs(lower[i]-expectedLower) > 1e-9 {
+			t.Errorf("Index %d: expected lower %f, got %f", i, expectedLower, lower[i])
 		}
 	}
 
