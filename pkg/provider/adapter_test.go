@@ -236,6 +236,7 @@ func TestGeminiAdapter_GenerateAndStructured(t *testing.T) {
 
 			var bodyBytes []byte
 			if req.Body != nil {
+				defer req.Body.Close()
 				var err error
 				bodyBytes, err = io.ReadAll(req.Body)
 				if err != nil {
