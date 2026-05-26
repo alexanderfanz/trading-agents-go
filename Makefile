@@ -25,7 +25,7 @@ test-race:
 
 # Compile the highly optimized Go orchestrator binary
 build:
-	go build -o tradingagents cmd/tradingagents/main.go
+	go build -ldflags="-s -w" -trimpath -o tradingagents cmd/tradingagents/main.go
 
 # Clean compiled binaries
 clean:
